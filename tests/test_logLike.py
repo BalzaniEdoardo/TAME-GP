@@ -20,8 +20,9 @@ def approx_grad(x0, dim, func, epsi):
     return grad
 
 class TestLogLikelihood(unittest.TestCase):
-    def __init__(self, eps):
-        self.eps = eps
+    def setUp(self):
+        super(TestLogLikelihood,self).__init__()
+        self.eps = 10**-7
         self.D = 4
         self.K = 5
         self.K0 = 2
@@ -60,13 +61,13 @@ class TestLogLikelihood(unittest.TestCase):
 
 
     def test_GPLike(self):
-        func = lambda z: GPLogLike(self.z, self.K_big_inv)
+        func = lambda z: GPLogLike(z, self.K_big_inv)
         grad = grad_GPLogLike(self.zbar, self.K_big_inv)
         app_grad = approx_grad(self.zbar, self.zbar.shape[0], func, 10 ** -4)
         err = (np.linalg.norm(grad - app_grad, axis=0) / np.abs(grad.shape[0] * np.mean(np.abs(grad))))
         self.assertLessEqual(err, self.eps, msg='average GP logLikelihood gradient error: %f'%err)
 
-        func = lambda z: grad_GPLogLike(self.z, self.K_big_inv)
+        func = lambda z: grad_GPLogLike(z, self.K_big_inv)
         hess = hess_GPLogLike(self.z, self.K_big_inv)
         app_hes = approx_grad(self.zbar, (self.zbar.shape[0], self.zbar.shape[0]), func, 10 ** -4)
         err = (np.linalg.norm(app_hes - hess) / np.abs(hess.shape[0] * hess.shape[1] * np.mean(np.abs(hess))))
@@ -75,10 +76,10 @@ class TestLogLikelihood(unittest.TestCase):
     def test_GaussOBSLike(self):
         RR = np.random.uniform(size=np.diag(self.R).shape)
         RR = np.dot(RR, RR.T)
-        res2 = grad_gaussObsLogLike(self.x1, self.z, self.W1, self.d1, self.RR)
+        res2 = grad_gaussObsLogLike(self.x1, self.z, self.W1, self.d1, RR)
         func = lambda z: gaussObsLogLike(self.x1, z.reshape(self.T, self.K), self.W1, self.d1, RR)
         app_grad = approx_grad(self.z.flatten(), np.prod(self.z.shape), func, 10 ** -4)
-        err = np.linalg.norm(res2 - app_grad, axis=0) / np.abs(res2.shape[0] * np.mean(np.abs(res2)))
+        err = (np.linalg.norm(res2 - app_grad, axis=0) / np.abs(res2.shape[0] * np.mean(np.abs(res2)))).mean()
         self.assertLessEqual(err, self.eps, msg='average Gaussian observation logLikelihood gradient error: %f' % err)
 
         hess = hess_gaussObsLogLike(self.x1, self.z, self.W1, self.d1, RR)
@@ -88,20 +89,36 @@ class TestLogLikelihood(unittest.TestCase):
         self.assertLessEqual(err, self.eps, msg='average Gaussian observation logLikelihood Hessian error: %f' % err)
 
     def test_PoissonOBSLike(self):
-        func = lambda zz: poissonLogLike(self.x2, self.zz.reshape(self.T, self.K),
+
+        func = lambda zz: poissonLogLike(self.x2, zz.reshape(self.T, self.K),
                                          self.z.reshape(self.T, self.K)*0.2, self.W2, self.W2 * 0.5, self.d2)
-        grad = grad_poissonLogLike(self.x2, self.z, self.z*0.2, self.W2, self.W2 * 0.5, self.d2)
+        grad_z0, grad_z1 = grad_poissonLogLike(self.x2, self.z, self.z*0.2, self.W2, self.W2 * 0.5, self.d2)
         app_grad = approx_grad(self.z.flatten(), np.prod(self.z.shape), func, 10 ** -4)
-        err = np.linalg.norm(grad - app_grad, axis=0) / np.abs(grad.shape[0] * np.mean(np.abs(grad)))
+        err = np.linalg.norm(grad_z0.flatten() - app_grad, axis=0) / np.abs(grad_z0.flatten().shape[0] * np.mean(np.abs(grad_z0.flatten())))
         self.assertLessEqual(err, self.eps, msg='average Poisson observation logLikelihood gradient error: %f' % err)
 
-        # hess = hess_gaussObsLogLike(self.x1, self.z, self.W1, self.d1, RR)
-        # func = lambda z: grad_gaussObsLogLike(self.x1, z.reshape(self.T, self.K), self.W1, self.d1, RR)
-        # app_hes = approx_grad(self.z.flatten(), (self.K * self.T, self.K * self.T), func, 10 ** -4)
-        # err = (np.linalg.norm(app_hes - hess) / np.abs(hess.shape[0] * hess.shape[1] * np.mean(np.abs(hess))))
-        # self.assertLessEqual(err, self.eps, msg='average Gaussian observation logLikelihood Hessian error: %f' % err)
+        hess_z0,hess_z1,hess_z0z1 = hess_poissonLogLike(self.x2, self.z, self.z*0.2, self.W2, self.W2 * 0.5, self.d2)
+        func = lambda zz: grad_poissonLogLike(self.x2, zz.reshape(self.T, self.K),
+                                         self.z.reshape(self.T, self.K)*0.2, self.W2, self.W2 * 0.5, self.d2)[0].flatten()
+        app_hess_z0 = approx_grad(self.z.flatten(), (self.K * self.T, self.K * self.T), func, 10 ** -4)
+        err = (np.linalg.norm(hess_z0 - app_hess_z0, axis=0) / np.abs(app_hess_z0.shape[0] * np.mean(np.abs(hess_z0)))).mean()
+        self.assertLessEqual(err, self.eps, msg='average Poisson observation logLikelihood Hessian_z0 error: %f' % err)
 
+        func = lambda zz: grad_poissonLogLike(self.x2, self.z.reshape(self.T, self.K),
+                                              zz.reshape(self.T, self.K), self.W2, self.W2 * 0.5, self.d2)[
+            1].flatten()
+        app_hess_z1 = approx_grad(self.z.flatten()*0.2, (self.K * self.T, self.K * self.T), func, 10 ** -4)
+        err = (np.linalg.norm(hess_z1 - app_hess_z1, axis=0) / np.abs(
+            app_hess_z1.shape[0] * np.mean(np.abs(hess_z1)))).mean()
+        self.assertLessEqual(err, self.eps, msg='average Poisson observation logLikelihood Hessian_z1 error: %f' % err)
 
+        func = lambda zz: grad_poissonLogLike(self.x2, self.z.reshape(self.T, self.K),
+                                              zz.reshape(self.T, self.K), self.W2, self.W2 * 0.5, self.d2)[
+            0].flatten()
+        app_hess_z0z1 = approx_grad(self.z.flatten() * 0.2, (self.K * self.T, self.K * self.T), func, 10 ** -4)
+        err = (np.linalg.norm(hess_z0z1 - app_hess_z0z1, axis=0) / np.abs(
+            app_hess_z0z1.shape[0] * np.mean(np.abs(hess_z0z1)))).mean()
+        self.assertLessEqual(err, self.eps, msg='average Poisson observation logLikelihood Hessian_z0z1 error: %f' % err)
 
 if __name__ == "__main__":
-    test_logLikelohood_gradAndHess(10**-7)
+    unittest.main()
