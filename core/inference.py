@@ -35,6 +35,7 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
         xx, yy = np.meshgrid(idx + xd, idx + xd)
         K[xd] = epsSignal * np.exp(
             -0.5 * (np.tile(T,T.shape[0]).reshape(T.shape[0],T.shape[0]) - np.repeat(T,T.shape[0]).reshape(T.shape[0],T.shape[0]))**2
+            -0.5 * (np.tile(T,T.shape[0]).reshape(T.shape[0],T.shape[0]) - np.repeat(T,T.shape[0]).reshape(T.shape[0],T.shape[0]))**2
                 * binSize**2 / ((tau[xd] * 1000) ** 2)) + epsNoise * np.eye(len(T))
 
         K_big[xx, yy] = K[xd]
@@ -49,6 +50,32 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
             logdet_K_big
     return K, K_big, K_big_inv,  logdet_K_big
 
+def makeK_big(params, trialDur, binSize, epsNoise=0.001, T=None, xdim=None, computeInv=False):
+    """
+    Compute the GP covariance, its inverse and the log-det
+    :param params:
+    :param trialDur:
+    :param binSize:
+    :param epsNoise:
+    :param T:
+    :param xdim:
+    :param computeInv:
+    :return:
+    """
+    if xdim is None:
+        [_, xdim] = np.shape(params['C'])
+    epsSignal = 1 - epsNoise
+    params['tau'] = np.ndarray.flatten(params['tau'])
+    if T is None:
+        T = np.arange(0, int(trialDur / binSize))
+    else:
+        T = np.arange(0, T)
+    K = np.zeros([xdim, len(T), len(T)])
+    K_big = np.zeros([xdim * len(T), xdim * len(T)])
+    K, K_big, K_big_inv,  logdet_K_big = compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, params['tau'],
+                                                          computeInv=computeInv)
+
+    return K, K_big, K_big_inv,  logdet_K_big
 
 def GPLogLike(z, Kinv):
     """
@@ -114,7 +141,7 @@ def grad_gaussObsLogLike(s, z, C, d, PsiInv):
     return normLL.flatten()
 
 
-def hess_gaussObsLike(s, z, C, d, PsiInv):
+def hess_gaussObsLogLike(s, z, C, d, PsiInv):
     """
     Hessian of the gaussian observartions
     :param z:
@@ -127,7 +154,7 @@ def hess_gaussObsLike(s, z, C, d, PsiInv):
     M = block_diag(*[CPsiInvC]*z.shape[0])
     return -M
 
-def poissonLike(x, z0, z1, W0, W1, d):
+def poissonLogLike(x, z0, z1, W0, W1, d):
     """
     Log-likelihood of the poisson population
     :param x:
@@ -142,7 +169,7 @@ def poissonLike(x, z0, z1, W0, W1, d):
          np.exp(np.einsum('ij,tj->ti', W1, z1) + np.einsum('ij,tj->ti', W0, z0) + d).sum()
     return LL
 
-def grad_poissonLike(x, z0, z1, W0, W1, d):
+def grad_poissonLogLike(x, z0, z1, W0, W1, d):
     """
     Gradient of the log-likelihood of the poisson population in z_j
     """
@@ -152,7 +179,7 @@ def grad_poissonLike(x, z0, z1, W0, W1, d):
     return poissLL_z0,poissLL_z1
 
 
-def hess_poissonLike(x, z0, z1, W0, W1, d):
+def hess_poissonLogLike(x, z0, z1, W0, W1, d):
     EXP = np.exp(np.einsum('ij,tj->ti', W0, z0) + np.einsum('ij,tj->ti', W1, z1) + d)
     T,K0 = z0.shape
     K1 = z1.shape[1]
