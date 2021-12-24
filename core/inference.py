@@ -35,7 +35,6 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
         xx, yy = np.meshgrid(idx + xd, idx + xd)
         K[xd] = epsSignal * np.exp(
             -0.5 * (np.tile(T,T.shape[0]).reshape(T.shape[0],T.shape[0]) - np.repeat(T,T.shape[0]).reshape(T.shape[0],T.shape[0]))**2
-            -0.5 * (np.tile(T,T.shape[0]).reshape(T.shape[0],T.shape[0]) - np.repeat(T,T.shape[0]).reshape(T.shape[0],T.shape[0]))**2
                 * binSize**2 / ((tau[xd] * 1000) ** 2)) + epsNoise * np.eye(len(T))
 
         K_big[xx, yy] = K[xd]
@@ -50,7 +49,7 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
             logdet_K_big
     return K, K_big, K_big_inv,  logdet_K_big
 
-def makeK_big(params, trialDur, binSize, epsNoise=0.001, T=None, xdim=None, computeInv=False):
+def makeK_big(xdim, tau, trialDur, binSize, epsNoise=0.001, T=None, computeInv=False):
     """
     Compute the GP covariance, its inverse and the log-det
     :param params:
@@ -62,17 +61,15 @@ def makeK_big(params, trialDur, binSize, epsNoise=0.001, T=None, xdim=None, comp
     :param computeInv:
     :return:
     """
-    if xdim is None:
-        [_, xdim] = np.shape(params['C'])
+
     epsSignal = 1 - epsNoise
-    params['tau'] = np.ndarray.flatten(params['tau'])
     if T is None:
         T = np.arange(0, int(trialDur / binSize))
     else:
         T = np.arange(0, T)
     K = np.zeros([xdim, len(T), len(T)])
     K_big = np.zeros([xdim * len(T), xdim * len(T)])
-    K, K_big, K_big_inv,  logdet_K_big = compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, params['tau'],
+    K, K_big, K_big_inv,  logdet_K_big = compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau,
                                                           computeInv=computeInv)
 
     return K, K_big, K_big_inv,  logdet_K_big
@@ -180,6 +177,16 @@ def grad_poissonLogLike(x, z0, z1, W0, W1, d):
 
 
 def hess_poissonLogLike(x, z0, z1, W0, W1, d):
+    """
+    compute the hessian for the poisson Log-likelihood
+    :param x:
+    :param z0:
+    :param z1:
+    :param W0:
+    :param W1:
+    :param d:
+    :return:
+    """
     EXP = np.exp(np.einsum('ij,tj->ti', W0, z0) + np.einsum('ij,tj->ti', W1, z1) + d)
     T,K0 = z0.shape
     K1 = z1.shape[1]
@@ -192,4 +199,36 @@ def hess_poissonLogLike(x, z0, z1, W0, W1, d):
         precision_z1[t] = precision_z1[t] + np.dot(W1.T * EXP[t], W1)
         precision_z0z1[t] = precision_z0z1[t] + np.dot(W0.T * EXP[t], W1)
     return block_diag(*(-precision_z0)),block_diag(*(-precision_z1)),block_diag(*(-precision_z0z1))
+
+
+def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise=0.001):
+    # extract dim z0, stim and trial time
+    K0 = stimPar['d'].shape[0]
+    tau0 = priorPar[0]['tau']
+    T, stimDim = stim.shape
+
+    # extract z0 and its params
+    z0 = zstack[:T*K0].reshape(T,K0)
+    K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+
+    # compute log likelihood for the stimulus and the GP
+    logLike = GPLogLike(z0, K0_big_inv) + gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+
+
+    i0 = K0
+    for k in range(len(xList)):
+        N, K = xPar[k]['W1'].shape
+        counts = xList[k].reshape(T,N)
+        z = zstack[i0: i0+T*K].reshape(T, K)
+        K_big_inv = makeK_big(K, priorPar[k]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+
+        logLike += GPLogLike(z,K_big_inv) + poissonLogLike(counts, z0, z,
+                                                           xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
+    return logLike
+
+
+
+
+
+
 

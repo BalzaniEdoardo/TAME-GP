@@ -49,12 +49,11 @@ class TestLogLikelihood(unittest.TestCase):
 
         self.z0 = np.random.normal(size=(self.T, self.K0))
 
-        params = {'C': self.W1, 'tau': np.random.uniform(0.4, 1, size=self.K)}
         trialDur = None
         binSize = 50
         TT = 100
-        self.KK, self.K_big, self.K_big_inv, self.logdet_K_big = makeK_big(params, trialDur, binSize, epsNoise=0.0000001, T=TT,
-                                                       xdim=None,
+        self.KK, self.K_big, self.K_big_inv, self.logdet_K_big = makeK_big(self.K, np.random.uniform(0.4, 1, size=self.K), trialDur, binSize, epsNoise=0.0000001, T=TT,
+
                                                        computeInv=True)
 
         self.zbar = np.random.multivariate_normal(mean=np.zeros(self.K_big.shape[0]), cov=self.K_big, size=1)[0]
