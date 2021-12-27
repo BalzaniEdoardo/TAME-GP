@@ -4,7 +4,6 @@ The class needs to store spikes and task variables, initialize parameters and se
 """
 import numpy as np
 
-
 class GP_pCCA_input(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit):
         """
@@ -106,11 +105,11 @@ class GP_pCCA_input(object):
         """
         counts = self.preproc.data[trNum]['Y']
         taskVars = self.preproc.covariates
-        stim = np.zeros((counts.shape[1], len(self.var_list)))
+        stim = np.zeros((counts.shape[0], len(self.var_list)))
 
         # create the stim var
         cc = 0
-        for var in self.area_list:
+        for var in self.var_list:
             stim[:, cc] = taskVars[var][trNum]
             cc += 1
 
@@ -121,7 +120,7 @@ class GP_pCCA_input(object):
         xList = []
         for area in self.area_list:
             sel = self.filter_unit * (self.unit_area == area)
-            xList.append(counts[sel, keep_idx].T)
+            xList.append(counts[keep_idx][:,sel])
 
         return stim, xList
 

@@ -229,6 +229,80 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise
 
 
 
+def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise=0.001):
+    # extract dim z0, stim and trial time
+    K0 = stimPar['d'].shape[0]
+    tau0 = priorPar[0]['tau']
+    T, stimDim = stim.shape
 
+    # extract z0 and its params
+    z0 = zstack[:T*K0].reshape(T,K0)
+    K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+
+    # compute log likelihood for the stimulus and the GP
+    grad_logLike = grad_GPLogLike(z0, K0_big_inv) + gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+
+
+    i0 = K0
+    for k in range(len(xList)):
+        N, K = xPar[k]['W1'].shape
+        counts = xList[k].reshape(T,N)
+        z = zstack[i0: i0+T*K].reshape(T, K)
+        K_big_inv = makeK_big(K, priorPar[k]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+
+        grad_logLike += grad_GPLogLike(z,K_big_inv) + grad_poissonLogLike(counts, z0, z,
+                                                           xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
+    return grad_logLike
+
+
+if __name__ == '__main__':
+    import sys, os, inspect
+
+    basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+    sys.path.append(os.path.join(basedir, 'firefly_utils'))
+    sys.path.append(os.path.join(basedir, 'core'))
+    from behav_class import emptyStruct
+    from inference import makeK_big
+    from scipy.linalg import block_diag
+    from data_structure import *
+    import seaborn as sbn
+
+    preproc = emptyStruct()
+    preproc.numTrials = 1
+    preproc.ydim = 50
+    preproc.binSize = 50
+
+    preproc.T = np.array([100])
+
+    tau = np.array([0.9, 0.2, 0.4])
+    K0 = 3
+    epsNoise = 0.000001
+    K_big = makeK_big(K0, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+    z = np.random.multivariate_normal(mean=np.zeros(K0 * preproc.T[0]), cov=K_big, size=1).reshape(preproc.T[0], K0)
+
+    # create the stim vars
+    PsiInv = np.eye(2)
+    W = np.random.normal(size=(2, K0))
+    d = np.zeros(2)
+    preproc.covariates = {}
+    preproc.covariates['var1'] = [np.random.multivariate_normal(mean=np.dot(W, z.T)[0], cov=np.eye(preproc.T[0]))]
+    preproc.covariates['var2'] = [np.random.multivariate_normal(mean=np.dot(W, z.T)[1], cov=np.eye(preproc.T[0]))]
+
+    # create the counts
+    tau = np.array([1.1])
+    K_big = makeK_big(1, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+    z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]), cov=K_big, size=1).reshape(preproc.T[0], 1)
+
+    W1 = np.random.normal(size=(preproc.ydim, 1))
+    W0 = np.random.normal(size=(preproc.ydim, 1))
+    d = -0.2
+    preproc.data = [
+        {'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z) + np.einsum('ij,tj->ti', W1, z1) + d))}]
+
+    # create the data struct
+    struc = GP_pCCA_input(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
+                          np.ones(preproc.ydim, dtype=bool))
+    struc.initializeParam([2, 1])
+    struc.get_observations(0)
 
 
