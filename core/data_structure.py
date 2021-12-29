@@ -5,7 +5,7 @@ The class needs to store spikes and task variables, initialize parameters and se
 import numpy as np
 
 class GP_pCCA_input(object):
-    def __init__(self, preProc, var_list, area_list, unit_area, filter_unit):
+    def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50):
         """
         :param preProc: structure with attributes:
             * numTrials: int, number of trials
@@ -30,6 +30,7 @@ class GP_pCCA_input(object):
         self.unit_area = unit_area
         self.area_list = area_list
         self.var_list = var_list
+        self.binSize = binSize
 
     def initializeParam(self, zdims):
         """
@@ -169,3 +170,4 @@ if __name__ == '__main__':
     # create the data struct
     struc = GP_pCCA_input(preproc,['var1','var2'],['PPC'],np.array(['PPC']*preproc.ydim),np.ones(preproc.ydim,dtype=bool))
     struc.initializeParam([2,1])
+
