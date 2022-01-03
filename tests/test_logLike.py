@@ -4,7 +4,7 @@ basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe()
 sys.path.append(os.path.join(basedir,'core'))
 from inference import (makeK_big,GPLogLike,grad_GPLogLike,hess_GPLogLike,
                        gaussObsLogLike,grad_gaussObsLogLike,hess_gaussObsLogLike,
-                       poissonLogLike,grad_poissonLogLike,hess_poissonLogLike)
+                       poissonLogLike,grad_poissonLogLike,hess_poissonLogLike,logDetCompute)
 import unittest
 
 
@@ -58,10 +58,24 @@ class TestLogLikelihood(unittest.TestCase):
 
         self.zbar = np.random.multivariate_normal(mean=np.zeros(self.K_big.shape[0]), cov=self.K_big, size=1)[0]
 
-    def test_KBig(self):
+    def test_KBigInv(self):
         err = np.max(np.abs(np.eye(self.K_big.shape[0]) - np.dot(self.K_big, self.K_big_inv)))
         print('\nERROR INV', err)
         self.assertLessEqual(err,self.eps)
+
+    def test_logDetKbig(self):
+        # log(det(A)) = 5*4/2 = 10
+        A = np.diag(np.exp(np.arange(1,5)))
+
+        # crete a rotation matrix that does not change the det
+        tmp = np.random.normal(size=(4,4))
+        tmp = np.dot(tmp,tmp.T)
+        _,U = np.linalg.eig(tmp)
+        ARot = np.dot(np.dot(U.T, A),U) # logdet = 10
+
+        # check the logdet
+        print('log-det err',np.abs(logDetCompute(ARot) - 10))
+        self.assertLessEqual(np.abs(logDetCompute(ARot) - 10), self.eps)
 
     def test_GPLike(self):
         func = lambda z: GPLogLike(z, self.K_big_inv)

@@ -9,6 +9,10 @@ from scipy.optimize import minimize
 from scipy.linalg import block_diag, lapack
 import scipy.sparse as sparse
 
+def logDetCompute(K):
+    chl = np.linalg.cholesky(K)
+    return 2 * np.sum(np.log(np.diag(chl)))
+
 def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=True):
     """
     Compute the RBF covariance for given parameters.
@@ -38,13 +42,9 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
         K_big[ii:ii+T.shape[0], ii:ii+T.shape[0]] = K[xd]
 
         if computeInv:
-            chl = np.linalg.cholesky(K[xd])
-            # Linv = np.linalg.solve(chl, np.eye(chl.shape[0]))
-            # chlInv = lapack.dtrtri(np.asfortranarray(np.array(chl, order='F')),lower=1)[0]
-            # Kinv = np.dot(chlInv.T,chlInv)
             Kinv = np.linalg.inv(K[xd])
-            logdet_K = 2 * np.sum(np.log(np.diag(chl)))
-            K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv  # invToeplitz(K);
+            logdet_K = logDetCompute(K[xd])
+            K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv
             logdet_K_big = logdet_K_big + logdet_K
         ii += T.shape[0]
 
@@ -213,7 +213,7 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise
     K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
 
     # compute log likelihood for the stimulus and the GP
-    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv) #
+    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
 
 
     i0 = K0*T
@@ -238,16 +238,14 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
     # extract z0 and its params
     z0 = zstack[:T*K0].reshape(T,K0)
     K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
-    # print(K0, tau0, None, binSize, epsNoise, T, True)
+
     # compute log likelihood for the stimulus and the GP
     grad_logLike = np.zeros(zstack.shape)
     grad_z0 = grad_GPLogLike(z0, K0_big_inv)
-    # print(grad_GPLogLike(z0, K0_big_inv).reshape(K0,T).T.flatten()[-5:])
 
     grad_z0 = grad_z0.reshape(K0,T).T.flatten()
     grad_z0 = grad_z0 + grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
     grad_logLike[:T*K0] = grad_z0
-    # print(grad_logLike[:T*K0][-5:])
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -263,6 +261,7 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
     return grad_logLike
 
 
+
 def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise=0.001):
     # extract dim z0, stim and trial time
     K0 = stimPar['W0'].shape[1]
@@ -273,7 +272,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
     z0 = zstack[:T*K0].reshape(T,K0)
     K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
     # compute log likelihood for the stimulus and the GP
-    hess_logLike = np.zeros([zstack.shape[0]]*2, dtype=np.float)
+    hess_logLike = np.zeros([zstack.shape[0]]*2, dtype=float)
     hess_z0 = hess_GPLogLike(z0, K0_big_inv)
     idx_rot = np.tile(np.arange(0, K0*T, T), T) + np.arange(K0*T)//K0
     hess_logLike[:T*K0,:T*K0] = hess_z0[idx_rot,:][:,idx_rot] + hess_gaussObsLogLike(stim,z0,stimPar['W0'],
@@ -296,6 +295,38 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
 
         i0 += K * T
     return hess_logLike
+
+def inferTrial(data, trNum, zbar=None):
+    # retrive outputs
+    stim, xList = data.get_observations(trNum)
+    priorPar = data.priorPar
+    stimPar = data.stimPar
+    xPar = data.xPar
+
+    if zbar is None:
+        zdim = 0
+        for priorP in priorPar:
+            zdim += priorP['tau'].shape[0]
+
+        zbar = np.random.normal(size=zdim*stim.shape[0])*0.01
+
+    # create the lambda function for the numerical MAP optimization
+    func = lambda z: -PpCCA_logLike(z, stim, xList,priorPar=priorPar,stimPar=stimPar,xPar=xPar,
+                  binSize=data.binSize,epsNoise=data.epsNoise)
+    grad_fun = lambda z: -grad_PpCCA_logLike(z, stim, xList,priorPar=priorPar,stimPar=stimPar,xPar=xPar,
+                  binSize=data.binSize,epsNoise=data.epsNoise)
+
+    res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B')
+    if not res.success:
+        print('unable to find MAP for trial',trNum)
+
+    zbar = res.x
+    precision = -(hess_PpCCA_logLike(zbar, stim, xList, priorPar=priorPar,stimPar=stimPar,xPar=xPar,
+                  binSize=data.binSize,epsNoise=data.epsNoise))
+    laplAppCov = np.linalg.inv(precision)
+
+    return zbar, laplAppCov
+
 
 def approx_grad(x0, dim, func, epsi):
     grad = np.zeros(shape=dim)
@@ -329,45 +360,55 @@ if __name__ == '__main__':
     import seaborn as sbn
     import matplotlib.pylab as plt
     np.random.seed(4)
+
+    # create the input data
     preproc = emptyStruct()
     preproc.numTrials = 1
     preproc.ydim = 50
     preproc.binSize = 50
-
-    preproc.T = np.array([7])
-
-    tau = np.array([0.9, 0.2, 0.4, 0.2, 0.8])
-    K0 = 5
-    tau = tau[:K0]
+    preproc.T = np.array([50])
+    tau0 = np.array([0.9, 0.2, 0.4, 0.2, 0.8])
+    K0 = len(tau0)
     epsNoise = 0.000001
-    K_big = makeK_big(K0, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-    z = np.random.multivariate_normal(mean=np.zeros(K0 * preproc.T[0]), cov=K_big, size=1).reshape(preproc.T[0], K0)
+    K_big = makeK_big(K0, tau0, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+    z0 = np.random.multivariate_normal(mean=np.zeros(K0 * preproc.T[0]), cov=K_big, size=1).reshape(K0, preproc.T[0]).T
 
     # create the stim vars
     PsiInv = np.eye(2)
     W = np.random.normal(size=(2, K0))
     d = np.zeros(2)
     preproc.covariates = {}
-    preproc.covariates['var1'] = [np.random.multivariate_normal(mean=np.dot(W, z.T)[0], cov=np.eye(preproc.T[0]))]
-    preproc.covariates['var2'] = [np.random.multivariate_normal(mean=np.dot(W, z.T)[1], cov=np.eye(preproc.T[0]))]
+    preproc.covariates['var1'] = [np.random.multivariate_normal(mean=np.dot(W, z0.T)[0], cov=np.eye(preproc.T[0]))]
+    preproc.covariates['var2'] = [np.random.multivariate_normal(mean=np.dot(W, z0.T)[1], cov=np.eye(preproc.T[0]))]
+    trueStimPar = {'W0': W, 'd': d, 'PsiInv': PsiInv}
 
     # create the counts
     tau = np.array([1.1,1.3])
-    K_big = makeK_big(2, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-    z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]*len(tau)), cov=K_big, size=1).reshape(preproc.T[0], len(tau))
+    K_big = makeK_big(len(tau), tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+    z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]*len(tau)), cov=K_big, size=1).reshape(len(tau),preproc.T[0]).T
 
     W1 = np.random.normal(size=(preproc.ydim, len(tau)))
     W0 = np.random.normal(size=(preproc.ydim, K0))
     d = -0.2
     preproc.data = [
-        {'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z) + np.einsum('ij,tj->ti', W1, z1) + d))}]
+        {'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z0) + np.einsum('ij,tj->ti', W1, z1) + d))}]
+
+    # create the true observation par dict
+    trueObsPar = [{
+                'W0': W0,
+                'W1': W1,
+                'd' : np.ones(preproc.ydim)*d
+            }]
+
+    # true Prior params
+    truePriorPar = [{'tau':tau0}, {'tau':tau}]
 
     # create the data struct
     struc = GP_pCCA_input(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
                           np.ones(preproc.ydim, dtype=bool))
     struc.initializeParam([K0, z1.shape[1]])
     stim, xList = struc.get_observations(0)
-    zstack = np.hstack((z.flatten(), z1.flatten()))
+    zstack = np.hstack((z0.flatten(), z1.flatten()))
 
 
     res = PpCCA_logLike(zstack, stim, xList,priorPar=struc.priorPar,stimPar=struc.stimPar,xPar=struc.xPar,
@@ -395,23 +436,12 @@ if __name__ == '__main__':
 
     plt.figure()
     plt.title('hessian check: %f'%np.max(np.abs(app_hess_res.flatten()-hess_res.flatten())))
-    # plt.scatter(app_grad, grad_res)
     plt.scatter(app_hess_res.flatten(), hess_res.flatten())
-    # plt.figure()
-    # ax1 = plt.subplot(121)
-    # ax2 = plt.subplot(122)
-    # sbn.heatmap(app_hess[:35,:35], linecolor='g', lw=0.5, ax=ax1, cbar=False)
-    # sbn.heatmap(hess_res, linecolor='g', lw=0.5, ax=ax2, cbar=False)
 
 
-    # # plt.scatter(app_hess.flatten(), hess_res.flatten())
     z0 = zstack[:K0*preproc.T[0]].reshape(preproc.T[0],K0)
     K0_big_inv = makeK_big(K0, struc.priorPar[0]['tau'], None, struc.binSize, epsNoise=0.0001, T=preproc.T[0], computeInv=True)[2]
-    # print(K0, struc.priorPar[0]['tau'], None, struc.binSize, 0.0001, preproc.T[0],True)
 
-    # K0_big_inv = np.diag(np.arange(1,1+K0_big_inv.shape[0]))
-    # K0_big_inv[1,0] = 1
-    # K0_big_inv[0, 1] = 1
 
     hess_z0 = hess_GPLogLike(z0, K0_big_inv)
 
@@ -427,39 +457,46 @@ if __name__ == '__main__':
 
     idx_rot = np.tile(np.arange(0, K0*preproc.T[0], preproc.T[0]), preproc.T[0]) + np.arange(K0*preproc.T[0])//K0
     hess_z0 = hess_z0[idx_rot].T
-    # rot2 = np.eye(K0*preproc.T[0])[idx_rot,:]
-    #
-    # plt.figure()
-    # ax1 = plt.subplot(121)
-    # ax2 = plt.subplot(122)
-    # sbn.heatmap(app_hess, linecolor='g', lw=0.5,ax=ax1,cbar=False)
-    # sbn.heatmap(hess_res, linecolor='g', lw=0.5,ax=ax2,cbar=False)
-    #
-    #
-    # plt.figure()
-    # plt.scatter(app_hess.flatten(), hess_z0.flatten())
-    #
 
-    # A = np.zeros((K0*preproc.T[0],)*2)
-    # i0=0
-    # idx = np.arange(0,K0*preproc.T[0],K0)
-    # for xd in range(K0):
-    #     xx, yy = np.meshgrid(idx + xd, idx + xd)
-    #     A[xx,yy] = np.ones((preproc.T[0],)*2) * (xd+1)
-    # # for tt in range(preproc.T[0]):
-    # #     A[i0:i0+K0,i0:i0+K0] = np.ones((K0,K0)) *(tt+1)
-    # #     i0 = i0+K0
-    #
-    # func = lambda z: reshapeHessianGP(K0, preproc.T[0], z.reshape(K0* preproc.T[0], K0* preproc.T[0]))
-    # # app_hess = approx_grad(A.flatten(), (A.flatten().shape[0], A.flatten().shape[0]), func, epsi=10 ** -4)
-    # plt.figure()
-    # ax1 = plt.subplot(121)
-    # ax2 = plt.subplot(122)
-    # sbn.heatmap(A, linecolor='g', lw=2,ax=ax1)
-    # sbn.heatmap(func(A), linecolor='g', lw=2,ax=ax2)
-    #
-    #
-    # func = lambda z: z.reshape(3,4).T.flatten()
-    # app_hess = approx_grad(np.arange(12), (12, 12), func,10** -4)
-    # plt.figure()
-    # sbn.heatmap(app_hess, linecolor='g', lw=2)
+    ## inference of the latent variables
+    # set the pars to the true
+    struc.xPar = trueObsPar
+    struc.priorPar = truePriorPar
+    struc.stimPar = trueStimPar
+    struc.epsNoise = epsNoise
+
+    # call the optimization function
+    meanPost, covPost = inferTrial(struc, 0)
+
+    zz0 = meanPost[:K0*preproc.T[0]].reshape(preproc.T[0],K0)
+    cov_z0 = covPost[:K0*preproc.T[0],:K0*preproc.T[0]]
+
+    fig = plt.figure(figsize=(10,3.5))
+    grid = plt.GridSpec(2, 10, wspace=0.4, hspace=0.3)
+    for k in range(K0):
+        plt.subplot(grid[0,2*k:2*(k+1)])
+        plt.title('z$_{0%d}$'%k,fontsize=18)
+        cov = cov_z0[k::K0,k::K0]
+        plt.plot(z0[:,k],ls='-')
+        p,= plt.plot(zz0[:,k],ls='--')
+        std = np.sqrt(np.diag(cov))
+        plt.fill_between(np.arange(z0.shape[0]), zz0[:,k]-1.96*std, zz0[:,k]+1.96*std,
+                         color=p.get_color(),alpha=0.4)
+
+    zz1 = meanPost[K0 * preproc.T[0]:].reshape(preproc.T[0], len(tau))
+    cov_z1 = covPost[K0 * preproc.T[0]:, K0 * preproc.T[0]:]
+
+    for k in range(len(tau)):
+        plt.subplot(grid[1,k*5:5*(k+1)])
+        plt.title('z$_{1%d}$' % k,fontsize=18)
+        cov = cov_z1[k::len(tau),k::len(tau)]
+        plt.plot(z1[:,k],ls='-')
+        p,= plt.plot(zz1[:,k],ls='--',color='g')
+        std = np.sqrt(np.diag(cov))
+        plt.fill_between(np.arange(z1.shape[0]), zz1[:,k]-1.96*std, zz1[:,k]+1.96*std,
+                         color=p.get_color(),alpha=0.4)
+
+    grid.tight_layout(fig)
+
+
+
