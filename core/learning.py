@@ -1,5 +1,9 @@
+"""
+Some of the code here is adapted from Machens et al. implementation of P-GPFA.
+"""
 import numpy as np
 from scipy.optimize import minimize
+
 
 def MStepPoisson_func(x, C, d, mean_post,cov_post):
     '''
@@ -30,6 +34,7 @@ def d_MStepPoisson_func_dC_dD(x, C, d, mean_post, cov_post):
     dhh_d = x.sum(axis=0)
     dhh_C = np.einsum('ti,tj->ij', x, mean_post)
     return np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))
+
 
 
 def ECz(z,C):

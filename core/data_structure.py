@@ -32,6 +32,9 @@ class GP_pCCA_input(object):
         self.var_list = var_list
         self.binSize = binSize
         self.epsNoise = epsNoise
+        self.trialDur = np.zeros(self.preproc.numTrials, dtype=int)
+        for tr in range(self.preproc.numTrials):
+            self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[1]
 
     def initializeParam(self, zdims):
         """
@@ -40,9 +43,8 @@ class GP_pCCA_input(object):
 
         """
         # get total tp
-        T = 0
-        for tr in range(self.preproc.numTrials):
-            T += self.preproc.data[tr]['Y'].shape[1]
+
+        T = self.trialDur.sum()
 
         # get the observation dim
         stimDim = len(self.var_list)
@@ -92,6 +94,7 @@ class GP_pCCA_input(object):
         self.priorPar = priorPar
         self.stimPar = stimPar
         self.xPar = xParams
+        self.zdims = np.array(zdims)
 
         # self.initPar = emptystruct()
         return

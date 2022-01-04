@@ -262,7 +262,20 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
 
 
 
-def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise=0.001):
+def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise=0.001, usePrior=1):
+    """
+
+    :param zstack:
+    :param stim:
+    :param xList:
+    :param priorPar:
+    :param stimPar:
+    :param xPar:
+    :param binSize:
+    :param epsNoise:
+    :param usePrior: only for debug reasons, remove the temporal dependency to obtain block structure for the post cov
+    :return:
+    """
     # extract dim z0, stim and trial time
     K0 = stimPar['W0'].shape[1]
     tau0 = priorPar[0]['tau']
@@ -275,7 +288,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
     hess_logLike = np.zeros([zstack.shape[0]]*2, dtype=float)
     hess_z0 = hess_GPLogLike(z0, K0_big_inv)
     idx_rot = np.tile(np.arange(0, K0*T, T), T) + np.arange(K0*T)//K0
-    hess_logLike[:T*K0,:T*K0] = hess_z0[idx_rot,:][:,idx_rot] + hess_gaussObsLogLike(stim,z0,stimPar['W0'],
+    hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + hess_gaussObsLogLike(stim,z0,stimPar['W0'],
                                                                                      stimPar['d'],stimPar['PsiInv'])
     i0 = K0*T
     for k in range(len(xList)):
@@ -287,7 +300,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
         hess_z0, hess_z1, hess_z0z1 = hess_poissonLogLike(counts, z0, z, xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
         tmp = hess_GPLogLike(z, K_big_inv)
         idx_rot = np.tile(np.arange(0, K * T, T), T) + np.arange(K * T) // K
-        hess_z1 = hess_z1 + tmp[idx_rot,:][:,idx_rot]
+        hess_z1 = hess_z1 + usePrior*tmp[idx_rot,:][:,idx_rot]
         hess_logLike[:T*K0,:T*K0] = hess_logLike[:T*K0,:T*K0] + hess_z0
         hess_logLike[i0: i0 + K * T, i0: i0 + K * T] = hess_z1
         hess_logLike[:K0 * T, i0: i0 + K * T] = hess_z0z1
@@ -327,6 +340,27 @@ def inferTrial(data, trNum, zbar=None):
 
     return zbar, laplAppCov
 
+def retrive_t_blocks_fom_cov(data, trNum, i_Latent, covPost):
+    """
+    this function returns the t x k_i x k_i covariance block for the posterior. the posterior is arranged into
+    T blocks.
+    :return:
+    """
+    # i0 = np.sum(data.zdims[:i_Latent])
+    K = data.zdims[i_Latent]
+    K0 = data.zdims[0]
+    T = data.trialDur[trNum]
+    i0 = np.sum(data.zdims[:i_Latent])*T
+    cov_00 = covPost[trNum][: K0 * T, : K0 * T]
+    cov_ii = covPost[trNum][i0: i0 + K * T, i0: i0 + K * T]
+    cov_i0 = covPost[trNum][:K0 * T, i0: i0 + K * T]
+    cov_tt = np.zeros((T, K+K0, K+K0))
+    for t in range(T):
+        cov_tt[t][:K0, :K0] = cov_00[t*K0: (t+1)*K0, t*K0: (t+1)*K0]
+        cov_tt[t][:K0, K0:] = cov_i0[t*K0: (t+1)*K0, t*K: (t+1)*K]
+        cov_tt[t][K0:, :K0] = cov_tt[t][:K0, K0:].T
+        cov_tt[t][K0:, K0:] = cov_ii[t * K: (t + 1) * K, t * K: (t + 1) * K]
+    return cov_tt
 
 def approx_grad(x0, dim, func, epsi):
     grad = np.zeros(shape=dim)
@@ -497,6 +531,10 @@ if __name__ == '__main__':
                          color=p.get_color(),alpha=0.4)
 
     grid.tight_layout(fig)
-
+    precision = -(hess_PpCCA_logLike(meanPost, stim, xList, priorPar=struc.priorPar, stimPar=struc.stimPar, xPar=struc.xPar,
+                         binSize=struc.binSize, epsNoise=struc.epsNoise,usePrior=0))
+    precision[precision==0] = np.nan
+    plt.close('all')
+    precResh = retrive_t_blocks_fom_cov(struc,0,1,[precision])
 
 

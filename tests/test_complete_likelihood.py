@@ -2,13 +2,14 @@ import numpy as np
 import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
-from inference import (PpCCA_logLike,grad_PpCCA_logLike,hess_PpCCA_logLike,makeK_big,approx_grad)
+from inference import (PpCCA_logLike,grad_PpCCA_logLike,hess_PpCCA_logLike,makeK_big,approx_grad,retrive_t_blocks_fom_cov)
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir, 'firefly_utils'))
 sys.path.append(os.path.join(basedir, 'core'))
 from behav_class import emptyStruct
 from data_structure import GP_pCCA_input
 import unittest
+from scipy.linalg import block_diag
 
 class TestLogLikelihood(unittest.TestCase):
     def setUp(self):
@@ -54,6 +55,21 @@ class TestLogLikelihood(unittest.TestCase):
                               np.ones(preproc.ydim, dtype=bool))
         self.struc.initializeParam([K0, self.z1.shape[1]])
         self.epsNoise=0.001
+
+    def test_unblock(self):
+        # create a struct with 5x2 latent dim and a block matrix
+        struc = emptyStruct()
+        struc.zdims = [5,2]
+        struc.trialDur = [50]
+        A = block_diag(*([np.ones((5,5))]*50))
+        B = block_diag(*([np.ones((5,2))*2]*50))
+        C = block_diag(*([np.ones((2,2))*3]*50))
+        M = np.block([[A, B], [B.T, C]])
+        MMOrig = block_diag(*([np.block([[np.ones((5,5)), np.ones((5,2))*2],
+                                         [np.ones((2,5))*2,np.ones((2,2))*3]])]*50))
+        t_M = retrive_t_blocks_fom_cov(struc, 0, 1, [M])
+        MM = block_diag(*t_M)
+        self.assertEqual(np.abs(MM-MMOrig).sum(),0)
 
     def test_gradLogLike(self):
         stim, xList = self.struc.get_observations(0)
