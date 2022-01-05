@@ -6,7 +6,7 @@ from inference import (makeK_big,GPLogLike,grad_GPLogLike,hess_GPLogLike,
                        gaussObsLogLike,grad_gaussObsLogLike,hess_gaussObsLogLike,
                        poissonLogLike,grad_poissonLogLike,hess_poissonLogLike,logDetCompute)
 import unittest
-
+np.random.seed(4)
 
 def approx_grad(x0, dim, func, epsi):
     grad = np.zeros(shape=dim)
