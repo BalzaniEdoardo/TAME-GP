@@ -4,186 +4,197 @@ Some of the code here is adapted from Machens et al. implementation of P-GPFA.
 import numpy as np
 from scipy.optimize import minimize
 
-def fun(xi,Ci,di,mu, cov):
-    return xi*di + xi * np.dot(Ci,mu) - np.exp(di + np.dot(Ci, mu) + 0.5*np.dot(Ci, np.dot(cov, Ci)))
 
-def gradFun(xi,Ci,di,mu, cov):
-    return xi - np.exp(di + np.dot(Ci, mu) + 0.5 * np.dot(Ci, np.dot(cov, Ci)))
-
-def slow_expectedLLPoisson_coord(xi, Ci, di, mean_post,cov_post):
-    # LL = 0
-    lin2 = xi.sum(axis=0)*di + np.einsum('t,j,tj->',xi,Ci,mean_post)
-    exp2 = np.exp(di + np.einsum('j,tj->t',Ci,mean_post) + 0.5*np.einsum('i,tij,j->t',Ci,cov_post,Ci)).sum()
-    # for t in range(xi.shape[0]):
-    #     LL += fun(xi[t],Ci,di,mean_post[t],cov_post[t])
-    return lin2-exp2
-
-
-def grad_expectedLLPoisson_coord(xi, Ci, di, mean_post, cov_post):
-    grad_Ci = np.zeros(Ci.shape[0])
-    grad_di = 0
-    for t in range(xi.shape[0]):
-        grad_di += gradFun(xi[t], Ci, di, mean_post[t], cov_post[t])#xi[t] - np.exp(di+ np.dot(mean_post[t],Ci) + 0.5*np.dot(Ci, np.dot(cov_post[t], Ci)))
-        grad_Ci = grad_Ci + xi[t]* mean_post[t] -\
-                   np.exp(di+np.dot(mean_post[t],Ci)+ 0.5*np.dot(Ci, np.dot(cov_post[t], Ci))) *\
-                   (mean_post[t] + np.dot(cov_post[t],Ci))
-    return grad_di, grad_Ci
-
-def slow_expectedLLPoisson(x,C,d,mean_post,cov_post):
-    LL = 0
-    for i in range(x.shape[1]):
-        LL += slow_expectedLLPoisson_coord(x[:,i], C[i,:], d[i], mean_post,cov_post)
-    return LL
-
-
-def grad_slow_expectedLLPoisson(x, C, d, mean_post, cov_post):
-    grad_C = np.zeros(C.shape)
-    grad_d = np.zeros(d.shape)
-    for i in range(x.shape[1]):
-        grad_d[i], grad_C[i] = grad_expectedLLPoisson_coord(x[:,i], C[i,:], d[i], mean_post, cov_post)
-
-    return grad_C, grad_d#np.hstack((grad_C.flatten(),grad_d))
-
-def MStepPoisson_func(x, C, d, mean_post,cov_post):
+def expectedLLPoisson(x, C, d, mean_post,cov_post, C1=None):
     '''
     The Spike count observation expected likelihood
     '''
     ydim, xdim = C.shape
+    mean0 = mean_post[:, :xdim]
+    if not C1 is None:
+        xdim1 = C1.shape[1]
+        mean1 = mean_post[:, xdim:]
+    else:
+        xdim1 = 0
     yhat = 0
     for yd in range(ydim):
-        CC = np.outer(C[yd, :], C[yd, :])
-        yhat += np.exp(0.5*np.sum(cov_post.reshape(cov_post.shape[0],xdim**2) * CC.reshape(xdim**2),axis=1)+\
-                d[yd] + np.einsum('j,tj->t', C[yd], mean_post))
+
+        if not C1 is None:
+            Cout = np.hstack((C[yd],C1[yd]))
+            CC = np.outer(Cout, Cout)
+        else:
+            Cout = C[yd]
+            CC = np.outer(C[yd, :], C[yd, :])
+        yhat += np.exp(0.5*np.sum(cov_post.reshape(cov_post.shape[0],(xdim+xdim1)**2) * CC.reshape((xdim+xdim1)**2),axis=1)+\
+            d[yd] + np.einsum('j,tj->t', Cout, mean_post))
     yhat = yhat.sum()
-    hh = np.einsum('tj,jk,tk->', x, C, mean_post, optimize=True) + np.dot(x.sum(axis=0),d)
+    if not C1 is None:
+        hh = np.einsum('tj,jk,tk->', x, C1, mean1, optimize=True) + np.einsum('tj,jk,tk->', x, C, mean0, optimize=True) + np.dot(x.sum(axis=0), d)
+    else:
+        hh = np.einsum('tj,jk,tk->', x, C, mean0, optimize=True) + np.dot(x.sum(axis=0),d)
     return hh - yhat
 
 
-def d_MStepPoisson_func_dC_dD(x, C, d, mean_post, cov_post):
+def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
     ydim, xdim = C.shape
+    # mean0 = mean_post[:,:xdim]
+    if not C1 is None:
+        xdim1 = C1.shape[1]
+        # mean1 = mean_post[:, xdim:]
+        dyhat_C1 = np.zeros((ydim, xdim1))
+    else:
+        xdim1 = 0
     dyhat_C = np.zeros((ydim, xdim))
     dyhat_d = np.zeros((ydim,))
     for yd in range(ydim):
-        CC = np.outer(C[yd, :], C[yd, :])
-        EXP = np.exp(0.5 * np.sum(cov_post.reshape(cov_post.shape[0], xdim ** 2) * CC.reshape(xdim ** 2), axis=1) + \
-                     d[yd] + np.einsum('j,tj->t', C[yd], mean_post))
-        covC = np.einsum('tij,j->ti', cov_post, C[yd])
-        dyhat_C[yd] = np.einsum('t,tj->j', EXP, mean_post + covC)
+        if not C1 is None:
+            Cout = np.hstack((C[yd], C1[yd]))
+            CC = np.outer(Cout, Cout)
+            covC = np.einsum('tij,j->ti', cov_post[:, :xdim, :xdim], C[yd]) + np.einsum('tij,j->ti', cov_post[:, :xdim, xdim:], C1[yd])
+            covC1 = np.einsum('tij,j->ti', cov_post[:, xdim:, xdim:], C1[yd]) + np.einsum('tij,j->ti', cov_post[:, xdim:, :xdim], C[yd])
+
+        else:
+            Cout = C[yd]
+            CC = np.outer(C[yd, :], C[yd, :])
+            covC = np.einsum('tij,j->ti', cov_post, C[yd])
+
+        EXP = np.exp(0.5 * np.sum(cov_post.reshape(cov_post.shape[0], (xdim+xdim1) ** 2) * CC.reshape((xdim+xdim1) ** 2), axis=1) + \
+                     d[yd] + np.einsum('j,tj->t', Cout, mean_post))
+        dyhat_C[yd] = np.einsum('t,tj->j', EXP, mean_post[:,:xdim] + covC)
+        if not C1 is None:
+            dyhat_C1[yd] = np.einsum('t,tj->j', EXP, mean_post[:, xdim:] + covC1)
         dyhat_d[yd] = EXP.sum()
     dhh_d = x.sum(axis=0)
-    dhh_C = np.einsum('ti,tj->ij', x, mean_post)
-    return dhh_d - dyhat_d, dhh_C - dyhat_C#np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))
+    dhh_Call = np.einsum('ti,tj->ij', x, mean_post)
+    dhh_C = dhh_Call[:,:xdim]
+    if not C1 is None:
+        dhh_C1 = dhh_Call[:, xdim:]
+        return np.hstack(((dhh_C - dyhat_C).flatten(), (dhh_C1 - dyhat_C1).flatten(), dhh_d - dyhat_d))
+    return np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))#dhh_d - dyhat_d, dhh_C - dyhat_C
 
 
-
-def ECz(z,C):
-    return np.exp(np.dot(C,z))
-
-def grad_ECz(z,C):
-    return np.exp(np.dot(C,z)) * z
-
-def approx_grad(x0, dim, func, epsi):
-    grad = np.zeros(shape=dim)
-    for j in range(grad.shape[0]):
-        if np.isscalar(x0):
-            ej = epsi
-        else:
-            ej = np.zeros(x0.shape[0])
-            ej[j] = epsi
-        grad[j] = (func(x0 + ej) - func(x0 - ej)) / (2 * epsi)
-    return grad
 
 if __name__ == '__main__':
+    from inference import *
     from time import perf_counter
+
+    import sys, os, inspect
+
+    basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+    sys.path.append(os.path.join(basedir, 'firefly_utils'))
+    sys.path.append(os.path.join(basedir, 'core'))
+    from behav_class import emptyStruct
+    from inference import makeK_big
+    from scipy.linalg import block_diag
+    from data_structure import *
+    import seaborn as sbn
+    import matplotlib.pylab as plt
+
     np.random.seed(4)
-    import  matplotlib.pylab as plt
-    T = 100
-    C = np.random.uniform(size=(100,7))*0.1
-    cov = np.random.normal(size=(C.shape[1],)*2)
-    cov = np.dot(cov,cov.T)
-    mean_post = np.random.multivariate_normal(mean=np.zeros(7), cov=cov, size=(T,))
-    cov_post = np.zeros((T,7,7))
-    for t in range(T):
-        cov_post[t] = cov
-    d = np.ones(C.shape[0])
-    d[:d.shape[0]//2] = -0.3
-    d[d.shape[0]//2:] = -0.1
-    x = np.random.poisson(lam=np.exp(np.dot(C,mean_post.T).T+d))
+
+    # create the input data
+    preproc = emptyStruct()
+    preproc.numTrials = 1
+    preproc.ydim = 50
+    preproc.binSize = 50
+    preproc.T = np.array([500])
+    tau0 = np.array([0.9])#np.array([0.9, 0.2, 0.4, 0.2, 0.8])
+    K0 = len(tau0)
+    epsNoise = 0.000001
+    K_big = makeK_big(K0, tau0, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+    z0 = np.random.multivariate_normal(mean=np.zeros(K0 * preproc.T[0]), cov=K_big, size=1).reshape(K0, preproc.T[0]).T
+
+    # create the stim vars
+    PsiInv = np.eye(2)
+    W = np.random.normal(size=(2, K0))
+    d = np.zeros(2)
+    preproc.covariates = {}
+    preproc.covariates['var1'] = [np.random.multivariate_normal(mean=np.dot(W, z0.T)[0], cov=np.eye(preproc.T[0]))]
+    preproc.covariates['var2'] = [np.random.multivariate_normal(mean=np.dot(W, z0.T)[1], cov=np.eye(preproc.T[0]))]
+    trueStimPar = {'W0': W, 'd': d, 'PsiInv': PsiInv}
+
+    # create the counts
+    tau = np.array([1.1, 1.3])
+    K_big = makeK_big(len(tau), tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+    z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0] * len(tau)), cov=K_big, size=1).reshape(len(tau),
+                                                                                                          preproc.T[
+                                                                                                              0]).T
+
+    W1 = np.random.normal(size=(preproc.ydim, len(tau)))
+    W0 = np.random.normal(size=(preproc.ydim, K0))
+    d = -0.2
+    preproc.data = [
+        {'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z0) + np.einsum('ij,tj->ti', W1, z1) + d))}]
+
+    # create the true observation par dict
+    trueObsPar = [{
+        'W0': W0,
+        'W1': W1,
+        'd': np.ones(preproc.ydim) * d
+    }]
+
+    # true Prior params
+    truePriorPar = [{'tau': tau0}, {'tau': tau}]
+
+    # create the data struct
+    struc = GP_pCCA_input(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
+                          np.ones(preproc.ydim, dtype=bool))
+    struc.initializeParam([K0, z1.shape[1]])
+    stim, xList = struc.get_observations(0)
+    zstack = np.hstack((z0.flatten(), z1.flatten()))
+
+    ## inference of the latent variables
+    # set the pars to the true
+    struc.xPar = trueObsPar
+    struc.priorPar = truePriorPar
+    struc.stimPar = trueStimPar
+    struc.epsNoise = epsNoise
+
+    # call the optimization function
+    meanPost, covPost = inferTrial(struc, 0)
+    mean_t, cov_t = retrive_t_blocks_fom_cov(struc, 0, 1, [meanPost], [covPost])
+
+    PARStack = np.hstack((W1.flatten(), np.ones(preproc.ydim) * d))
+    # Wsize =
+    grad_fun = lambda xx: -grad_expectedLLPoisson(xList[0], xx[:np.prod(W1.shape)].reshape(W1.shape),
+                                                    xx[np.prod(W1.shape):], mean_t[:,K0:], cov_t[:,K0:,K0:])
+
+    func = lambda xx: -expectedLLPoisson(xList[0], xx[:np.prod(W1.shape)].reshape(W1.shape),
+                                                    xx[np.prod(W1.shape):], mean_t[:, K0:], cov_t[:, K0:, K0:])
+
+    print('first optimization')
+    res = minimize(func,np.zeros(PARStack.shape[0]),jac=grad_fun)
+    app_grad1 = approx_grad(PARStack,PARStack.shape[0],func,10**-4)
 
 
-    ## check the fast implementation using the slow one
-    #
-    #
-    # func = lambda xx: -MStepPoisson_func(x,xx[:np.prod(C.shape)].reshape(C.shape),
-    #     xx[np.prod(C.shape):].reshape(d.shape),mean_post,cov_post)
-    # grad_func = lambda xx: -d_MStepPoisson_func_dC_dD(x, xx[:np.prod(C.shape)].reshape(C.shape),
-    #                                     xx[np.prod(C.shape):].reshape(d.shape), mean_post, cov_post)
-    #
-    # xxbar = np.hstack((C.flatten(),d))
-    # grad = -d_MStepPoisson_func_dC_dD(x, C, d, mean_post, cov_post)
-    # # app_grad = approx_grad(xxbar,xxbar.shape[0],func,10**-6)
+    # repeat with 2 factors
+    PARStack2 = np.hstack((W0.flatten(), W1.flatten(), np.ones(preproc.ydim) * d))
+    # Wsize =
+    grad_fun2 = lambda xx: -grad_expectedLLPoisson(xList[0], xx[:np.prod(W0.shape)].reshape(W0.shape),
+                                         xx[np.prod(W0.shape)+np.prod(W1.shape):], mean_t, cov_t,
+                                         C1=xx[np.prod(W0.shape):np.prod(W0.shape)+np.prod(W1.shape)].reshape(W1.shape))
 
-    t0 = perf_counter()
-    ll0 = slow_expectedLLPoisson(x, C, d, mean_post, cov_post)
-    t1 = perf_counter()
-    ll1 = MStepPoisson_func(x, C, d, mean_post, cov_post)
-    t2 = perf_counter()
-    print('slow',t1-t0)
-    print('fast',t2-t1)
-    print('difference',ll0-ll1)
+    func2 = lambda xx: -expectedLLPoisson(xList[0], xx[:np.prod(W0.shape)].reshape(W0.shape),
+                                         xx[np.prod(W0.shape)+np.prod(W1.shape):], mean_t, cov_t,
+                                         C1=xx[np.prod(W0.shape):np.prod(W0.shape)+np.prod(W1.shape)].reshape(W1.shape))
 
+    print('second optimization')
+    res2 = minimize(func2, np.zeros(PARStack2.shape[0]), jac=grad_fun2)
 
-    # slow_expectedLLPoisson(xi, Ci, di, mean_post,cov_post)
-    # MStepPoisson_func
-    gC,gd = grad_slow_expectedLLPoisson(x, C, d, mean_post, cov_post)
-    func = lambda CC : MStepPoisson_func(x, CC.reshape(C.shape), d, mean_post, cov_post)
-    agC = approx_grad(C.flatten(),C.flatten().shape,func,10**-5)
+    plt.figure(figsize=[6.4 , 3.54])
+    plt.title('M-step Poisson Observation')
+    plt.plot(PARStack2,label='true parameter')
+    plt.plot(res2.x,label='recovered parameter')
+    plt.ylabel('parameter palue')
+    plt.xlabel('parameter index')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/M_step_poisson.jpg')
 
-    gd_fast,gC_fast = d_MStepPoisson_func_dC_dD(x, C, d, mean_post, cov_post)
-    err = (gC.flatten()-agC)
-    err2 = (gC.flatten() - gC_fast.flatten())
-    print('cum err grad and approx', np.abs(err).max())
-    print('err grad and grad fast', np.abs(err2).max())
-
-    # for tt in range(T):
-    #     # func = lambda di:funLin(x[tt,7],C[7],di,mean_post[tt],cov_post[tt])
-    #     # grad_func = lambda di:gradLin(x[tt,7],C[7],di,mean_post[tt],cov_post[tt])
-    #
-    #     func = lambda di: fun(x[tt, 7], C[7], di, mean_post[tt], cov_post[tt])
-    #     grad_func = lambda di: gradFun(x[tt, 7], C[7], di, mean_post[tt], cov_post[tt])
-    #
-    #     x0 = np.array([0.2])
-    #     grad = grad_func(x0)
-    #     app_grad = approx_grad(x0,1,func,10**-5)
-    #     print(grad-app_grad,grad)
-
-    # t0 = perf_counter()
-    # grad0 = grad_slow_expectedLLPoisson(x, C, d, mean_post, cov_post)
-    # t1 = perf_counter()
-    # grad1 = d_MStepPoisson_func_dC_dD(x, C, d, mean_post, cov_post)
-    # t2 = perf_counter()
-    # print('slow', t1 - t0)
-    # print('fast', t2 - t1)
-    # print('difference', np.abs(grad0 - grad1).max())
-
-
-
-    #
-    # func = lambda xx: -slow_expectedLLPoisson(x, xx[:np.prod(C.shape)].reshape(C.shape),
-    #                                      xx[np.prod(C.shape):].reshape(d.shape), mean_post, cov_post)
-    # grad_func = lambda xx: -grad_slow_expectedLLPoisson(x, xx[:np.prod(C.shape)].reshape(C.shape),
-    #                                                   xx[np.prod(C.shape):].reshape(d.shape), mean_post, cov_post)
-    #
-    # xxbar = np.hstack((C.flatten(), d))
-    # grad = grad_func(xxbar)
-    # app_grad = approx_grad(xxbar,xxbar.shape[0],func,10**-6)
-
-
+    # app_grad = approx_grad(PARStack2,PARStack2.shape[0],func2,10**-4)
     # plt.figure()
-    # plt.title('max err: %f'%np.max(np.abs(grad-app_grad)))
-    # plt.scatter(app_grad, grad)
-    #
-    # xxbar0 = -0.5+np.random.normal(size=xxbar.shape)*0.001
-    # res = minimize(func,xxbar0,jac=grad_func,method='L-BFGS-B')
-    # Crec = res.x[:np.prod(C.shape)].reshape(C.shape)
-    # drec = res.x[np.prod(C.shape):]
+    # plt.subplot(121)
+    # plt.scatter(app_grad1, grad_fun(PARStack))
+    # plt.subplot(122)
+    # plt.scatter(app_grad,grad_fun2(PARStack2))
+    # print('GRADIENT NOT WORKING! fix')

@@ -221,7 +221,7 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,epsNoise
         N, K = xPar[k]['W1'].shape
         counts = xList[k].reshape(T,N)
         z = zstack[i0: i0+T*K].reshape(T, K)
-        K_big_inv = makeK_big(K, priorPar[k]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+        K_big_inv = makeK_big(K, priorPar[k+1]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
 
         logLike += GPLogLike(z,K_big_inv) + poissonLogLike(counts, z0, z,
                                                            xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
@@ -252,7 +252,7 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
         N, K = xPar[k]['W1'].shape
         counts = xList[k].reshape(T,N)
         z = zstack[i0: i0+T*K].reshape(T, K)
-        K_big_inv = makeK_big(K, priorPar[k]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+        K_big_inv = makeK_big(K, priorPar[k+1]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
         grad_z0, grad_z1 = grad_poissonLogLike(counts, z0, z, xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
         grad_z1 = grad_z1.flatten() + grad_GPLogLike(z,K_big_inv).reshape(K,T).T.flatten()
         grad_logLike[:K0*T] = grad_logLike[:K0*T] + grad_z0.flatten()
@@ -295,7 +295,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize,eps
         N, K = xPar[k]['W1'].shape
         counts = xList[k].reshape(T,N)
         z = zstack[i0: i0+T*K].reshape(T, K)
-        K_big_inv = makeK_big(K, priorPar[k]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
+        K_big_inv = makeK_big(K, priorPar[k+1]['tau'], None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
 
         hess_z0, hess_z1, hess_z0z1 = hess_poissonLogLike(counts, z0, z, xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
         tmp = hess_GPLogLike(z, K_big_inv)
@@ -340,7 +340,7 @@ def inferTrial(data, trNum, zbar=None):
 
     return zbar, laplAppCov
 
-def retrive_t_blocks_fom_cov(data, trNum, i_Latent, covPost):
+def retrive_t_blocks_fom_cov(data, trNum, i_Latent, meanPost, covPost):
     """
     this function returns the t x k_i x k_i covariance block for the posterior. the posterior is arranged into
     T blocks.
@@ -355,12 +355,17 @@ def retrive_t_blocks_fom_cov(data, trNum, i_Latent, covPost):
     cov_ii = covPost[trNum][i0: i0 + K * T, i0: i0 + K * T]
     cov_i0 = covPost[trNum][:K0 * T, i0: i0 + K * T]
     cov_tt = np.zeros((T, K+K0, K+K0))
+    mean_0 = meanPost[trNum][:K0*T]
+    mean_i = meanPost[trNum][i0: i0 + K * T]
+    mean_tt = np.zeros((T,K+K0))
     for t in range(T):
         cov_tt[t][:K0, :K0] = cov_00[t*K0: (t+1)*K0, t*K0: (t+1)*K0]
         cov_tt[t][:K0, K0:] = cov_i0[t*K0: (t+1)*K0, t*K: (t+1)*K]
         cov_tt[t][K0:, :K0] = cov_tt[t][:K0, K0:].T
         cov_tt[t][K0:, K0:] = cov_ii[t * K: (t + 1) * K, t * K: (t + 1) * K]
-    return cov_tt
+        mean_tt[t][:K0] = mean_0[t*K0:(t+1)*K0]
+        mean_tt[t][K0:] = mean_i[t * K:(t + 1) * K]
+    return mean_tt, cov_tt
 
 def approx_grad(x0, dim, func, epsi):
     grad = np.zeros(shape=dim)

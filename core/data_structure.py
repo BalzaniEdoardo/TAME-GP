@@ -34,7 +34,7 @@ class GP_pCCA_input(object):
         self.epsNoise = epsNoise
         self.trialDur = np.zeros(self.preproc.numTrials, dtype=int)
         for tr in range(self.preproc.numTrials):
-            self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[1]
+            self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
 
     def initializeParam(self, zdims):
         """
