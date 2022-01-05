@@ -3,6 +3,8 @@ Implement a class that handles the input dataset conveniently.
 The class needs to store spikes and task variables, initialize parameters and select appropriately the data for the fits.
 """
 import numpy as np
+from behav_class import emptyStruct
+
 
 class GP_pCCA_input(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001):

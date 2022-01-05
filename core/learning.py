@@ -72,6 +72,134 @@ def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
         return np.hstack(((dhh_C - dyhat_C).flatten(), (dhh_C1 - dyhat_C1).flatten(), dhh_d - dyhat_d))
     return np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))#dhh_d - dyhat_d, dhh_C - dyhat_C
 
+# def MStepGauss(x1, mean_post, cov_post):
+#     mumuT = np.einsum('tj,tk->jk', mean_post, mean_post)
+#     cov = cov_post.sum(axis=0)
+#     mu = mean_post.sum(axis=0)
+#     Ezz = cov + mumuT
+#     T = mean_post.shape[0]
+#     xMu = np.einsum('tj,tk->jk', x1, mean_post)
+#     sX = x1.sum(axis=0)
+#
+#     # method based on the 2D system
+#     # MM = np.block([[Ezz, mu.reshape(-1, 1)], [mu.reshape(1,-1), T]])
+#     # ee = np.block([xMu, sX.reshape(-1,1)])
+#     # Cd = np.linalg.solve(MM,ee.T).T
+#     # Wother = Cd[:, :mu.shape[0]]
+#     # dother = Cd[:,-1]
+#
+#     M_inv = np.linalg.pinv(cov + mumuT - np.einsum('i,j->ij',mu,mu)/T)
+#
+#     W1 = np.dot(xMu - np.einsum('i,j->ij',sX,mu)/T, M_inv)
+#     d1 = x1.mean(axis=0) - np.dot(W1, mu)/T
+#
+#     term_0 = -0.5 * np.einsum('ti,tj->ij', x1, x1)
+#     term_1 = np.einsum('ij,kj->ik',xMu,W1)#np.einsum('tj,ti,ki->jk',x1,mean_post,W1)
+#     term_1 = 0.5*(term_1+term_1.T)
+#     term_2 = np.einsum('j,i->ji', sX, d1)
+#     term_2 = 0.5 * (term_2 + term_2.T)
+#     term_3 = -0.5*np.einsum('ij,jk,km->im',W1,Ezz.T,W1.T)
+#     term_4 = -np.einsum('j,k,ik->ji', d1, mu,W1)
+#     term_4 = 0.5*(term_4 + term_4.T)
+#     term_5 = -0.5*mean_post.shape[0] * np.einsum('j,k->jk', d1, d1)
+#     R = -2 / T * (term_0+term_1+term_2+term_3+term_4+term_5)
+#
+#     WW,dd,RR = MStepGauss2(x1,mean_post,cov_post)
+#     return W1,d1,R
+
+def MStepGauss(x1, mean_post, cov_post):
+    mumuT = np.einsum('tj,tk->jk', mean_post, mean_post)
+    cov = cov_post.sum(axis=0)
+    mu = mean_post.sum(axis=0)
+    Ezz = cov + mumuT
+
+    T = mean_post.shape[0]
+    xMu = np.einsum('tj,tk->jk',x1,mean_post)
+    sX = x1.sum(axis=0)
+
+    # method based on the 2D system
+    # t0 = perf_counter()
+    # MM = np.block([[Ezz, mu.reshape(-1, 1)], [mu.reshape(1,-1), T]])
+    # ee = np.block([xMu, sX.reshape(-1,1)])
+    # Cd = np.linalg.solve(MM,ee.T).T
+    # Wother = Cd[:, :mu.shape[0]]
+    # dother = Cd[:,-1]
+    # t1=perf_counter()
+    # print(t1-t0)
+
+    W1 = np.linalg.solve(cov + mumuT - np.einsum('i,j->ij',mu,mu)/T,(xMu - np.einsum('i,j->ij', sX, mu) / T).T).T
+    d1 = (sX - np.dot(W1, mu)) / T
+
+    # Psi update
+    term_0 = np.einsum('ti,tj->ij', x1, x1)
+    term_1 = -np.einsum('ij,kj->ik',xMu,W1) #np.einsum('tj,ti,ki->jk',x1,mean_post,W1)
+    term_1 = term_1+term_1.T
+    term_2 = -np.einsum('j,i->ji', sX, d1)
+    term_2 = term_2 + term_2.T
+    term_3 = np.einsum('ij,jk,km->im',W1,Ezz.T,W1.T)
+    term_4 = np.einsum('j,k,ik->ji', d1, mu,W1)
+    term_4 = term_4 + term_4.T
+    term_5 = mean_post.shape[0] * np.einsum('j,k->jk', d1, d1)
+    R = 1 / T * (term_0+term_1+term_2+term_3+term_4+term_5)
+    return W1, d1, R
+
+def logLike_Gauss(x1,W1,d1,Rinv,mean_post,cov_post):
+    if len(Rinv.shape) == 1:
+        logDet = np.log(Rinv).sum()
+        Rinv = np.diag(Rinv)
+    else:
+        logDet = np.log(np.linalg.eigh(Rinv)[0]).sum()
+    Ezz = cov_post.sum(axis=0) + np.einsum('tj,tk->jk',mean_post,mean_post)
+    term0 = -0.5*np.einsum('ti,ij,tj',x1,Rinv,x1)
+    term1 = np.einsum('tj,jk,km,tm', x1, Rinv, W1, mean_post)#np.einsum('tj,jk,km,tm',x1,Rinv,W1,mean_post)
+    term2 = np.einsum('tj,jk,k->t', x1, Rinv, d1).sum()#np.einsum('tj,jk,k->t', x1, Rinv, d1).sum()
+    term3 = -0.5 * np.trace(np.einsum('ij,jk,kl,lh->ih',W1.T,Rinv,W1,Ezz))#-0.5 * np.trace(np.einsum('ij,jk,kl,lt->it',W1.T,Rinv,W1,Ezz))
+    term4 = - np.einsum('j,jk,kw,tw->t', d1, Rinv, W1, mean_post).sum()#-np.einsum('j,jk,kw,tw->t',d1,Rinv,W1,mean_post).sum()
+    term5 = -0.5 * mean_post.shape[0] * np.einsum('j,jk,k', d1, Rinv, d1)#-0.5 * mean_post.shape[0] * np.einsum('j,jk,k',d1,Rinv,d1)
+    term6 = 0.5 * logDet * mean_post.shape[0]
+
+    loss = term0 + term1 + term2 + term3 + term4 + term5 + term6
+    return loss
+
+def dLoss_dWd(x1,W1,d1,Rinv,mean_post,cov_post):
+    mumuT = np.einsum('tj,tk->jk', mean_post, mean_post)
+    cov = cov_post.sum(axis=0)
+    mu = mean_post.sum(axis=0)
+    Ezz = cov + mumuT
+
+    T = mean_post.shape[0]
+    xMu = np.einsum('tj,tk->jk', x1, mean_post)
+    sX = x1.sum(axis=0)
+
+    # method based on the 2D system
+    MM = np.block([[Ezz, mu.reshape(-1, 1)], [mu.reshape(1,-1), T]])
+    ee = np.block([xMu, sX.reshape(-1,1)])
+    Wd = np.block([W1, d1.reshape(-1,1)])
+    grad = np.dot(Wd,MM) - ee
+    return grad
+
+def dLoss_dRinv(x1,W1,d1,Rinv,mean_post,cov_post):
+    if len(Rinv.shape) == 1:
+        Rinv = np.diag(Rinv)
+
+    Ezz = cov_post.sum(axis=0) + np.einsum('tj,tk->jk',mean_post,mean_post)
+    mu = mean_post.sum(axis=0)
+
+    xMu = np.einsum('tj,tk->jk', x1, mean_post)
+    sX = x1.sum(axis=0)
+
+    term_0 = -0.5 * np.einsum('ti,tj->ij', x1, x1)
+    term_1 = np.einsum('ij,kj->ik', xMu, W1)  # np.einsum('tj,ti,ki->jk',x1,mean_post,W1)
+    term_1 = 0.5 * (term_1 + term_1.T)
+    term_2 = np.einsum('j,i->ji', sX, d1)
+    term_2 = 0.5 * (term_2 + term_2.T)
+    term_3 = -0.5 * np.einsum('ij,jk,km->im', W1, Ezz.T, W1.T)
+    term_4 = -np.einsum('j,k,ik->ji', d1, mu, W1)
+    term_4 = 0.5 * (term_4 + term_4.T)
+    term_5 = -0.5 * mean_post.shape[0] * np.einsum('j,k->jk', d1, d1)
+    grad_loss = term_0 + term_1 + term_2 + term_3 + term_4 + term_5 + 0.5 * mean_post.shape[0] * np.linalg.inv(Rinv)
+    return grad_loss
+
 
 
 if __name__ == '__main__':
@@ -97,7 +225,7 @@ if __name__ == '__main__':
     preproc.numTrials = 1
     preproc.ydim = 50
     preproc.binSize = 50
-    preproc.T = np.array([500])
+    preproc.T = np.array([50])
     tau0 = np.array([0.9])#np.array([0.9, 0.2, 0.4, 0.2, 0.8])
     K0 = len(tau0)
     epsNoise = 0.000001
@@ -181,17 +309,21 @@ if __name__ == '__main__':
     print('second optimization')
     res2 = minimize(func2, np.zeros(PARStack2.shape[0]), jac=grad_fun2)
 
-    plt.figure(figsize=[6.4 , 3.54])
-    plt.title('M-step Poisson Observation')
-    plt.plot(PARStack2,label='true parameter')
-    plt.plot(res2.x,label='recovered parameter')
-    plt.ylabel('parameter palue')
-    plt.xlabel('parameter index')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/M_step_poisson.jpg')
+    if preproc.T[0] >= 500:
+        plt.figure(figsize=[6.4 , 3.54])
+        plt.title('M-step Poisson Observation')
+        plt.plot(PARStack2,label='true parameter')
+        plt.plot(res2.x,label='recovered parameter')
+        plt.ylabel('parameter palue')
+        plt.xlabel('parameter index')
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/M_step_poisson.jpg')
 
-    # app_grad = approx_grad(PARStack2,PARStack2.shape[0],func2,10**-4)
+    app_grad = approx_grad(PARStack2,PARStack2.shape[0],func2,10**-5)
+    grad = grad_fun2(PARStack2)
+
+    Wnew, dnew, PsiNew = MStepGauss()
     # plt.figure()
     # plt.subplot(121)
     # plt.scatter(app_grad1, grad_fun(PARStack))

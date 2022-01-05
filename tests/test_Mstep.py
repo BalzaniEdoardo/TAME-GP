@@ -7,7 +7,7 @@ from inference import (inferTrial,makeK_big,retrive_t_blocks_fom_cov)
 from behav_class import emptyStruct
 from data_structure import GP_pCCA_input
 import unittest
-from learning import expectedLLPoisson,grad_expectedLLPoisson
+from learning import expectedLLPoisson,grad_expectedLLPoisson,MStepGauss,dLoss_dRinv, dLoss_dWd
 
 
 def approx_grad(x0, dim, func, epsi):
@@ -36,7 +36,7 @@ class TestMStep(unittest.TestCase):
         ## derivative of the exponential being monotonic). The larger the T the more the error is accumulating so
         # eventually the precision in the approx derivative will be lost.
         ## Using 0 < T < 100 should be enough for 10^-7 precisioo
-        self.T = 20
+        self.T = 200
         binSize = 50
         epsNoise = 0.001
         self.tau0 = np.random.uniform(0.2, 1, self.K0)
@@ -66,8 +66,11 @@ class TestMStep(unittest.TestCase):
         self.d1 = np.random.uniform(size=(self.D))
         self.d2 = 1 * np.random.uniform(-1, 0.2, size=(self.N))
         self.d3 = 1 * np.random.uniform(-1, 0.2, size=(self.N1))
+        A = np.random.normal(size=(self.R.shape[0],)*2)
+        A = np.dot(A,A.T)
+        _,U = np.linalg.eig(A)
 
-        Psi = np.diag(self.R)
+        self.Psi = np.dot(np.dot(U.T,np.diag(self.R)),U)
         self.x1 = np.random.normal(loc=np.einsum('ij,tj->ti', self.W1, self.z) + self.d1,
                                    scale=np.tile(np.sqrt(self.R), self.T).reshape(self.T, self.D))
         self.x2 = np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', self.W02, self.z) +
@@ -85,7 +88,7 @@ class TestMStep(unittest.TestCase):
         preproc.covariates = {}
         for k in range(self.D):
             preproc.covariates['var%d' % k] = [self.x1[:, k]]
-        trueStimPar = {'W0': self.W1, 'd': self.d1, 'PsiInv': np.linalg.inv(Psi)}
+        trueStimPar = {'W0': self.W1, 'd': self.d1, 'PsiInv': np.linalg.inv(self.Psi)}
 
         preproc.data = [{'Y': np.hstack([self.x2, self.x3])}]
         trueObsPar = [{'W0': self.W02, 'W1': self.W12, 'd': self.d2},
@@ -109,6 +112,28 @@ class TestMStep(unittest.TestCase):
 
         # posterior mean and covariance of factor self.z and self.z2
         self.mean_01, self.cov_01 = retrive_t_blocks_fom_cov(self.struc, 0, 1, [self.meanPost], [self.covPost])
+
+    def test_GaussMStep(self):
+        W = self.W1
+        d = self.d1
+        Psi = self.Psi
+        x1 = self.x1
+        mean_t, cov_t = retrive_t_blocks_fom_cov(self.struc, 0, 0, [self.meanPost], [self.covPost])
+        Wnew, dnew, PsiNew = MStepGauss(x1, mean_t, cov_t)
+
+        grad1 = dLoss_dWd(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)
+        err1 = (np.abs(grad1).max())
+        print('gradient theo [W,d] max error', err1)
+
+        # func = lambda xx: logLike_Gauss(x1, Wnew, dnew, xx.reshape(Psi.shape), mean_t, cov_t)
+        grad2 = dLoss_dRinv(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)
+        err2 = (np.abs(grad2).max())
+
+        print('gradient theo Psi^-1 max error', err2)
+        self.assertLessEqual(err1, self.eps, msg='parameter W or d are not 0s of the gradient: %f' % err1)
+        self.assertLessEqual(err2, self.eps, msg='parameter Psi^-1 does not 0s of the gradient: %f' % err2)
+
+
 
 
     def test_PoissonMStep(self):
@@ -137,6 +162,8 @@ class TestMStep(unittest.TestCase):
         err = np.abs(app_grad-grad).mean() / np.mean(np.abs(grad))
         print('ERROR in Poisson MSetp Gradient:',err)
         self.assertLessEqual(err, self.eps, msg='average Poisson observation logLikelihood Hessian_z0z1 error: %f' % err)
+
+
 
 if __name__ == "__main__":
     unittest.main()

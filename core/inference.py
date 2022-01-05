@@ -352,19 +352,27 @@ def retrive_t_blocks_fom_cov(data, trNum, i_Latent, meanPost, covPost):
     T = data.trialDur[trNum]
     i0 = np.sum(data.zdims[:i_Latent])*T
     cov_00 = covPost[trNum][: K0 * T, : K0 * T]
-    cov_ii = covPost[trNum][i0: i0 + K * T, i0: i0 + K * T]
-    cov_i0 = covPost[trNum][:K0 * T, i0: i0 + K * T]
-    cov_tt = np.zeros((T, K+K0, K+K0))
-    mean_0 = meanPost[trNum][:K0*T]
-    mean_i = meanPost[trNum][i0: i0 + K * T]
-    mean_tt = np.zeros((T,K+K0))
-    for t in range(T):
-        cov_tt[t][:K0, :K0] = cov_00[t*K0: (t+1)*K0, t*K0: (t+1)*K0]
-        cov_tt[t][:K0, K0:] = cov_i0[t*K0: (t+1)*K0, t*K: (t+1)*K]
-        cov_tt[t][K0:, :K0] = cov_tt[t][:K0, K0:].T
-        cov_tt[t][K0:, K0:] = cov_ii[t * K: (t + 1) * K, t * K: (t + 1) * K]
-        mean_tt[t][:K0] = mean_0[t*K0:(t+1)*K0]
-        mean_tt[t][K0:] = mean_i[t * K:(t + 1) * K]
+    mean_0 = meanPost[trNum][:K0 * T]
+    if i_Latent == 0:
+        mean_tt = np.zeros((T, K0))
+        cov_tt = np.zeros((T, K0, K0))
+        for t in range(T):
+            cov_tt[t] = cov_00[t * K0: (t + 1) * K0, t * K0: (t + 1) * K0]
+            mean_tt[t] = mean_0[t*K0:(t+1)*K0]
+
+    else:
+        mean_i = meanPost[trNum][i0: i0 + K * T]
+        cov_ii = covPost[trNum][i0: i0 + K * T, i0: i0 + K * T]
+        cov_i0 = covPost[trNum][:K0 * T, i0: i0 + K * T]
+        cov_tt = np.zeros((T, K+K0, K+K0))
+        mean_tt = np.zeros((T,K+K0))
+        for t in range(T):
+            cov_tt[t][:K0, :K0] = cov_00[t*K0: (t+1)*K0, t*K0: (t+1)*K0]
+            cov_tt[t][:K0, K0:] = cov_i0[t*K0: (t+1)*K0, t*K: (t+1)*K]
+            cov_tt[t][K0:, :K0] = cov_tt[t][:K0, K0:].T
+            cov_tt[t][K0:, K0:] = cov_ii[t * K: (t + 1) * K, t * K: (t + 1) * K]
+            mean_tt[t][:K0] = mean_0[t*K0:(t+1)*K0]
+            mean_tt[t][K0:] = mean_i[t * K:(t + 1) * K]
     return mean_tt, cov_tt
 
 def approx_grad(x0, dim, func, epsi):
