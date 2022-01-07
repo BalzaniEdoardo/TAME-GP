@@ -23,7 +23,7 @@ The resulting graphical model is depicted in fig B.
 ![pCCA_schemes](https://user-images.githubusercontent.com/28624715/148568234-66c0f179-c839-4d56-ad0e-826940bb324d.png)
 
 
-# Code implementation
+# Implementation
 The code implements parameter learning and inference in the mdoel presented above. Parameters are learned with an approximate EM algorithm where the latent posterior distribution is approximated via the Laplace method.
 Inference is implemented as numerical optimization of the MAP for the latents. Latent covariacnce is approximated via the Laplace method.
 
