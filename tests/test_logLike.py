@@ -6,18 +6,11 @@ from inference import (makeK_big,GPLogLike,grad_GPLogLike,hess_GPLogLike,
                        gaussObsLogLike,grad_gaussObsLogLike,hess_gaussObsLogLike,
                        poissonLogLike,grad_poissonLogLike,hess_poissonLogLike,logDetCompute)
 import unittest
+from data_processing_tools import approx_grad
+
 np.random.seed(4)
 
-def approx_grad(x0, dim, func, epsi):
-    grad = np.zeros(shape=dim)
-    for j in range(grad.shape[0]):
-        if np.isscalar(x0):
-            ej = epsi
-        else:
-            ej = np.zeros(x0.shape[0])
-            ej[j] = epsi
-        grad[j] = (func(x0 + ej) - func(x0 - ej)) / (2 * epsi)
-    return grad
+
 
 class TestLogLikelihood(unittest.TestCase):
     def setUp(self):

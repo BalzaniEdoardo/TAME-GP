@@ -218,6 +218,16 @@ def parse_fullCov_latDim(data, meanPost, covPost, T):
 
     return mean_t, cov_ii_t
 
+def approx_grad(x0, dim, func, epsi):
+    grad = np.zeros(shape=dim)
+    for j in range(grad.shape[0]):
+        if np.isscalar(x0):
+            ej = epsi
+        else:
+            ej = np.zeros(x0.shape[0])
+            ej[j] = epsi
+        grad[j] = (func(x0 + ej) - func(x0 - ej)) / (2 * epsi)
+    return grad
 
 if __name__ == '__main__':
     from time import perf_counter

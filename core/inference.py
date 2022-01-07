@@ -276,17 +276,26 @@ def inferTrial(data, trNum, zbar=None):
 
     return zbar, laplAppCov
 
+def multiTrialInference(data, trList):
+    tr_idx = 0
+    if not 'meanPost' in data.__dict__.keys():
+        data.meanPost = {}
 
-def approx_grad(x0, dim, func, epsi):
-    grad = np.zeros(shape=dim)
-    for j in range(grad.shape[0]):
-        if np.isscalar(x0):
-            ej = epsi
+    elif not 'covPost' in data.__dict__.keys():
+        data.covPost = {}
+
+    for tr in trList:
+        if tr_idx == 0:
+            zbar = None
         else:
-            ej = np.zeros(x0.shape[0])
-            ej[j] = epsi
-        grad[j] = (func(x0 + ej) - func(x0 - ej)) / (2 * epsi)
-    return grad
+            zbar = None
+
+        # set all the attributes related to trial as dictionaries
+        T = data.trialDur[tr]
+        meanPost, covPost = inferTrial(data, tr, zbar=zbar)
+        parse_fullCov_latDim(data, meanPost, covPost, T)
+
+
 
 # def reshapeHessianGP(zdim, T, hess):
 #     assert(hess.shape[0]==zdim*T)

@@ -1,7 +1,7 @@
 import numpy as np
 from data_processing_tools import makeK_big
 
-def allTrial_grad_expectedLLGPPrior(lam , data, meanPost, covPost, binSize,eps=0.001,Tmax=600,isGrad=False):
+def allTrial_grad_expectedLLGPPrior(lam , meanPost, covPost, binSize,eps=0.001,Tmax=600,isGrad=False):
     """
     Average over trial of the expected log-likelihood of the GP prior as a funciton of the time constant
     :param lam: transformed time constant such that K(t,s) = exp(-lam / 2 * |t-s|^2)
@@ -16,8 +16,8 @@ def allTrial_grad_expectedLLGPPrior(lam , data, meanPost, covPost, binSize,eps=0
     :param isGrad: True return the gradient, False returns the funcion evaluation
     :return:
     """
-    trial_num = len(data.trialDur)
-
+    #trial_num = len(data.trialDur)
+    trial_num = len(meanPost)
     xDim = len(lam)
 
     idx_max = np.arange(0, (xDim) * (Tmax ), xDim)
@@ -145,7 +145,6 @@ if __name__=='__main__':
     from scipy.optimize import minimize
 
     dat = dataGen(150,T=50)
-    C = dat.cca_input.stimPar['W0']
     lam_0 = 2*np.log(
         ((dat.cca_input.priorPar[1]['tau']*dat.cca_input.binSize/1000))
                    )
@@ -158,9 +157,9 @@ if __name__=='__main__':
         cov_list.append(s[1])
 
 
-    func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, dat.cca_input, mu_list, cov_list, dat.cca_input.binSize,eps,
+    func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list, dat.cca_input.binSize,eps,
                                                   max(dat.cca_input.trialDur), isGrad=False)
-    func_grad = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, dat.cca_input, mu_list, cov_list, dat.cca_input.binSize,eps,
+    func_grad = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list, dat.cca_input.binSize,eps,
                                                   max(dat.cca_input.trialDur)+1, isGrad=True)
     res = minimize(func, np.zeros(len(lam_0)), jac=func_grad, method='L-BFGS-B',tol=10**-10)
 

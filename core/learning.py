@@ -3,7 +3,7 @@ Some of the code here is adapted from Machens et al. implementation of P-GPFA.
 """
 import numpy as np
 from scipy.optimize import minimize
-
+from data_processing_tools import approx_grad
 
 def expectedLLPoisson(x, C, d, mean_post,cov_post, C1=None):
     '''

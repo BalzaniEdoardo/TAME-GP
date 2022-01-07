@@ -7,7 +7,7 @@ import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'firefly_utils'))
 from behav_class import emptyStruct
-
+from copy import deepcopy
 
 class GP_pCCA_input(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001):
@@ -37,9 +37,24 @@ class GP_pCCA_input(object):
         self.var_list = var_list
         self.binSize = binSize
         self.epsNoise = epsNoise
-        self.trialDur = np.zeros(self.preproc.numTrials, dtype=int)
+
+        # create a data dictionary with trial information
+        self.trialDur = {}#np.zeros(self.preproc.numTrials, dtype=int)
+        data = {}
+
         for tr in range(self.preproc.numTrials):
             self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
+            data[tr] = self.preproc.data[tr]
+
+        cov = {}
+        for var in self.preproc.covariates.keys():
+            cov[var] = {}
+            for tr in range(self.preproc.numTrials):
+                cov[var][tr] = self.preproc.covariates[var][tr]
+        self.preproc.data = data
+        self.preproc.T = deepcopy(self.trialDur)
+        self.preproc.covariates = cov
+
 
     def initializeParam(self, zdims):
         """
@@ -49,7 +64,7 @@ class GP_pCCA_input(object):
         """
         # get total tp
 
-        T = self.trialDur.sum()
+        T = np.sum(list(self.trialDur.values()))
 
         # get the observation dim
         stimDim = len(self.var_list)
@@ -134,6 +149,20 @@ class GP_pCCA_input(object):
 
         return stim, xList
 
+    def subSampleTrial(self, trialVec):
+        subStruct = deepcopy(self)
+        unwanted = set(self.trialDur.keys()) - set(trialVec)
+        for unwanted_key in unwanted: del subStruct.trialDur[unwanted_key]
+        for unwanted_key in unwanted: del subStruct.preproc.data[unwanted_key]
+        for unwanted_key in unwanted: del subStruct.preproc.T[unwanted_key]
+        for var in subStruct.preproc.covariates.keys():
+            for key in unwanted:
+                subStruct.preproc.covariates[var].pop(key)
+        subStruct.preproc.numTrials = len(subStruct.trialDur.keys())
+        return subStruct
+
+
+
 if __name__ == '__main__':
     import sys,os,inspect
     basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
@@ -144,39 +173,45 @@ if __name__ == '__main__':
     from scipy.linalg import block_diag
     import seaborn as sbn
     preproc = emptyStruct()
-    preproc.numTrials = 1
+    preproc.numTrials = 10
     preproc.ydim = 50
     preproc.binSize = 50
 
-    preproc.T = np.array([100])
+    preproc.T = np.array([100]*preproc.numTrials)
 
-    tau = np.array([0.9,0.2,0.4])
-    K0 = 3
-    epsNoise=0.000001
-    K_big = makeK_big(K0, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-    z = np.random.multivariate_normal(mean=np.zeros(K0*preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],K0)
 
-    # create the stim vars
-    PsiInv = np.eye(2)
-    W = np.random.normal(size=(2, K0))
-    d = np.zeros(2)
     preproc.covariates = {}
-    preproc.covariates['var1'] = [np.random.multivariate_normal(mean=np.dot(W,z.T)[0],cov=np.eye(preproc.T[0]))]
-    preproc.covariates['var2'] = [np.random.multivariate_normal(mean=np.dot(W,z.T)[1],cov=np.eye(preproc.T[0]))]
+    preproc.covariates['var1'] = []
+    preproc.covariates['var2'] = []
+    preproc.data = []
+    for k in range(preproc.numTrials):
+        tau = np.array([0.9, 0.2, 0.4])
+        K0 = 3
+        epsNoise = 0.000001
+        K_big = makeK_big(K0, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+        z = np.random.multivariate_normal(mean=np.zeros(K0*preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],K0)
+
+        # create the stim vars
+        PsiInv = np.eye(2)
+        W = np.random.normal(size=(2, K0))
+        d = np.zeros(2)
+
+        preproc.covariates['var1'] += [np.random.multivariate_normal(mean=np.dot(W,z.T)[0],cov=np.eye(preproc.T[0]))]
+        preproc.covariates['var2'] += [np.random.multivariate_normal(mean=np.dot(W,z.T)[1],cov=np.eye(preproc.T[0]))]
 
 
-    # create the counts
-    tau = np.array([1.1])
-    K_big = makeK_big(1, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-    z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],1)
+        # create the counts
+        tau = np.array([1.1])
+        K_big = makeK_big(1, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+        z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],1)
 
-    W1 = np.random.normal(size=(preproc.ydim, 1))
-    W0 = np.random.normal(size=(preproc.ydim, 1))
-    d = -0.2
-    preproc.data = [{'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z) + np.einsum('ij,tj->ti', W1, z1) + d))}]
+        W1 = np.random.normal(size=(preproc.ydim, 1))
+        W0 = np.random.normal(size=(preproc.ydim, 1))
+        d = -0.2
+        preproc.data += [{'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z) + np.einsum('ij,tj->ti', W1, z1) + d))}]
 
 
     # create the data struct
     struc = GP_pCCA_input(preproc,['var1','var2'],['PPC'],np.array(['PPC']*preproc.ydim),np.ones(preproc.ydim,dtype=bool))
     struc.initializeParam([2,1])
-
+    a = struc.subSampleTrial(np.arange(2,5))

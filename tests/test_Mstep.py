@@ -8,18 +8,8 @@ from behav_class import emptyStruct
 from data_structure import GP_pCCA_input
 import unittest
 from learning import expectedLLPoisson,grad_expectedLLPoisson,MStepGauss,dLoss_dRinv, dLoss_dWd
+from data_processing_tools import approx_grad
 
-
-def approx_grad(x0, dim, func, epsi):
-    grad = np.zeros(shape=dim)
-    for j in range(grad.shape[0]):
-        if np.isscalar(x0):
-            ej = epsi
-        else:
-            ej = np.zeros(x0.shape[0])
-            ej[j] = epsi
-        grad[j] = (func(x0 + ej) - func(x0 - ej)) / (2 * epsi)
-    return grad
 
 class TestMStep(unittest.TestCase):
 
