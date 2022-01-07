@@ -8,72 +8,7 @@ from time import perf_counter
 from scipy.optimize import minimize
 from scipy.linalg import block_diag, lapack
 import scipy.sparse as sparse
-
-def logDetCompute(K):
-    chl = np.linalg.cholesky(K)
-    return 2 * np.sum(np.log(np.diag(chl)))
-
-def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=True):
-    """
-    Compute the RBF covariance for given parameters.
-    :param K:
-    :param K_big:
-    :param T:
-    :param binSize:
-    :param epsNoise:
-    :param epsSignal:
-    :param tau:
-    :param computeInv:
-    :return:
-    """
-    # compute log det
-    if computeInv:
-        K_big_inv = np.zeros(K_big.shape)
-        logdet_K_big = 0
-    else:
-        logdet_K_big = None
-        K_big_inv = None
-    ii = 0
-    for xd in range(K.shape[0]):
-        K[xd] = epsSignal * np.exp(
-            -0.5 * (np.tile(T,T.shape[0]).reshape(T.shape[0],T.shape[0]) - np.repeat(T,T.shape[0]).reshape(T.shape[0],T.shape[0]))**2
-                * binSize**2 / ((tau[xd] * 1000) ** 2)) + epsNoise * np.eye(len(T))
-
-        K_big[ii:ii+T.shape[0], ii:ii+T.shape[0]] = K[xd]
-
-        if computeInv:
-            Kinv = np.linalg.inv(K[xd])
-            logdet_K = logDetCompute(K[xd])
-            K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv
-            logdet_K_big = logdet_K_big + logdet_K
-        ii += T.shape[0]
-
-    return K, K_big, K_big_inv,  logdet_K_big
-
-def makeK_big(xdim, tau, trialDur, binSize, epsNoise=0.001, T=None, computeInv=False):
-    """
-    Compute the GP covariance, its inverse and the log-det
-    :param params:
-    :param trialDur:
-    :param binSize:
-    :param epsNoise:
-    :param T:
-    :param xdim:
-    :param computeInv:
-    :return:
-    """
-
-    epsSignal = 1 - epsNoise
-    if T is None:
-        T = np.arange(0, int(trialDur / binSize))
-    else:
-        T = np.arange(0, T)
-    K = np.zeros([xdim, len(T), len(T)])
-    K_big = np.zeros([xdim * len(T), xdim * len(T)])
-    K, K_big, K_big_inv,  logdet_K_big = compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau,
-                                                          computeInv=computeInv)
-
-    return K, K_big, K_big_inv,  logdet_K_big
+from data_processing_tools import *
 
 def GPLogLike(z, Kinv):
     """
@@ -336,44 +271,11 @@ def inferTrial(data, trNum, zbar=None):
     zbar = res.x
     precision = -(hess_PpCCA_logLike(zbar, stim, xList, priorPar=priorPar,stimPar=stimPar,xPar=xPar,
                   binSize=data.binSize,epsNoise=data.epsNoise))
-    laplAppCov = np.linalg.inv(precision)
+    laplAppCov = invertHessBlock(precision, data.zdims, data.trialDur[trNum])
+    # laplAppCov = np.linalg.inv(precision)
 
     return zbar, laplAppCov
 
-def retrive_t_blocks_fom_cov(data, trNum, i_Latent, meanPost, covPost):
-    """
-    this function returns the t x k_i x k_i covariance block for the posterior. the posterior is arranged into
-    T blocks.
-    :return:
-    """
-    # i0 = np.sum(data.zdims[:i_Latent])
-    K = data.zdims[i_Latent]
-    K0 = data.zdims[0]
-    T = data.trialDur[trNum]
-    i0 = np.sum(data.zdims[:i_Latent])*T
-    cov_00 = covPost[trNum][: K0 * T, : K0 * T]
-    mean_0 = meanPost[trNum][:K0 * T]
-    if i_Latent == 0:
-        mean_tt = np.zeros((T, K0))
-        cov_tt = np.zeros((T, K0, K0))
-        for t in range(T):
-            cov_tt[t] = cov_00[t * K0: (t + 1) * K0, t * K0: (t + 1) * K0]
-            mean_tt[t] = mean_0[t*K0:(t+1)*K0]
-
-    else:
-        mean_i = meanPost[trNum][i0: i0 + K * T]
-        cov_ii = covPost[trNum][i0: i0 + K * T, i0: i0 + K * T]
-        cov_i0 = covPost[trNum][:K0 * T, i0: i0 + K * T]
-        cov_tt = np.zeros((T, K+K0, K+K0))
-        mean_tt = np.zeros((T,K+K0))
-        for t in range(T):
-            cov_tt[t][:K0, :K0] = cov_00[t*K0: (t+1)*K0, t*K0: (t+1)*K0]
-            cov_tt[t][:K0, K0:] = cov_i0[t*K0: (t+1)*K0, t*K: (t+1)*K]
-            cov_tt[t][K0:, :K0] = cov_tt[t][:K0, K0:].T
-            cov_tt[t][K0:, K0:] = cov_ii[t * K: (t + 1) * K, t * K: (t + 1) * K]
-            mean_tt[t][:K0] = mean_0[t*K0:(t+1)*K0]
-            mean_tt[t][K0:] = mean_i[t * K:(t + 1) * K]
-    return mean_tt, cov_tt
 
 def approx_grad(x0, dim, func, epsi):
     grad = np.zeros(shape=dim)
@@ -386,13 +288,13 @@ def approx_grad(x0, dim, func, epsi):
         grad[j] = (func(x0 + ej) - func(x0 - ej)) / (2 * epsi)
     return grad
 
-def reshapeHessianGP(zdim, T, hess):
-    assert(hess.shape[0]==zdim*T)
-    hess_resh = np.zeros(hess.shape)
-    idx = np.arange(0,zdim*T,zdim)
-    for k in range(zdim):
-        hess_resh[k*T:(k+1)*T, k*T:(k+1)*T] = hess[k::zdim, k::zdim]
-    return hess_resh
+# def reshapeHessianGP(zdim, T, hess):
+#     assert(hess.shape[0]==zdim*T)
+#     hess_resh = np.zeros(hess.shape)
+#     idx = np.arange(0,zdim*T,zdim)
+#     for k in range(zdim):
+#         hess_resh[k*T:(k+1)*T, k*T:(k+1)*T] = hess[k::zdim, k::zdim]
+#     return hess_resh
 
 if __name__ == '__main__':
     import sys, os, inspect

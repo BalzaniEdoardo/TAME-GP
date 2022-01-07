@@ -3,6 +3,9 @@ Implement a class that handles the input dataset conveniently.
 The class needs to store spikes and task variables, initialize parameters and select appropriately the data for the fits.
 """
 import numpy as np
+import os,sys,inspect
+basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+sys.path.append(os.path.join(basedir,'firefly_utils'))
 from behav_class import emptyStruct
 
 

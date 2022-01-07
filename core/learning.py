@@ -72,40 +72,6 @@ def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
         return np.hstack(((dhh_C - dyhat_C).flatten(), (dhh_C1 - dyhat_C1).flatten(), dhh_d - dyhat_d))
     return np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))#dhh_d - dyhat_d, dhh_C - dyhat_C
 
-# def MStepGauss(x1, mean_post, cov_post):
-#     mumuT = np.einsum('tj,tk->jk', mean_post, mean_post)
-#     cov = cov_post.sum(axis=0)
-#     mu = mean_post.sum(axis=0)
-#     Ezz = cov + mumuT
-#     T = mean_post.shape[0]
-#     xMu = np.einsum('tj,tk->jk', x1, mean_post)
-#     sX = x1.sum(axis=0)
-#
-#     # method based on the 2D system
-#     # MM = np.block([[Ezz, mu.reshape(-1, 1)], [mu.reshape(1,-1), T]])
-#     # ee = np.block([xMu, sX.reshape(-1,1)])
-#     # Cd = np.linalg.solve(MM,ee.T).T
-#     # Wother = Cd[:, :mu.shape[0]]
-#     # dother = Cd[:,-1]
-#
-#     M_inv = np.linalg.pinv(cov + mumuT - np.einsum('i,j->ij',mu,mu)/T)
-#
-#     W1 = np.dot(xMu - np.einsum('i,j->ij',sX,mu)/T, M_inv)
-#     d1 = x1.mean(axis=0) - np.dot(W1, mu)/T
-#
-#     term_0 = -0.5 * np.einsum('ti,tj->ij', x1, x1)
-#     term_1 = np.einsum('ij,kj->ik',xMu,W1)#np.einsum('tj,ti,ki->jk',x1,mean_post,W1)
-#     term_1 = 0.5*(term_1+term_1.T)
-#     term_2 = np.einsum('j,i->ji', sX, d1)
-#     term_2 = 0.5 * (term_2 + term_2.T)
-#     term_3 = -0.5*np.einsum('ij,jk,km->im',W1,Ezz.T,W1.T)
-#     term_4 = -np.einsum('j,k,ik->ji', d1, mu,W1)
-#     term_4 = 0.5*(term_4 + term_4.T)
-#     term_5 = -0.5*mean_post.shape[0] * np.einsum('j,k->jk', d1, d1)
-#     R = -2 / T * (term_0+term_1+term_2+term_3+term_4+term_5)
-#
-#     WW,dd,RR = MStepGauss2(x1,mean_post,cov_post)
-#     return W1,d1,R
 
 def MStepGauss(x1, mean_post, cov_post):
     mumuT = np.einsum('tj,tk->jk', mean_post, mean_post)
