@@ -1,17 +1,26 @@
-import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize
 from data_processing_tools import makeK_big
 
+def allTrial_grad_expectedLLGPPrior(lam , data, meanPost, covPost, binSize,eps=0.001,Tmax=600,isGrad=False):
+    """
+    Average over trial of the expected log-likelihood of the GP prior as a funciton of the time constant
+    :param lam: transformed time constant such that K(t,s) = exp(-lam / 2 * |t-s|^2)
+    :param data: object of the class gen_synthetic_data.dataGen
+    :param meanPost: list, one element for each trial. meanPost[tr] is a K x T tensor containing the posterior mean
+    :param covPost: list, one element for each trial. meanPost[tr] is a K x T x T tensor containing a slice the posterior
+     covariance for each laetnt dimension. Do not need the full posterior since the RBF kernel factorizes over
+     coordinates.
+    :param binSize: time sampling rate in ms
+    :param eps: noise parameter
+    :param Tmax: max duration of a trial
+    :param isGrad: True return the gradient, False returns the funcion evaluation
+    :return:
+    """
+    trial_num = len(data.trialDur)
 
+    xDim = len(lam)
 
-def allTrial_loglike_RBF_wrt(lam , params, infRes, binSize,eps=0.001,Tmax=600,isGrad=False):
-    C = params['C']
-    trial_num = len(infRes['post_mean'])
-
-    xDim = C.shape[1]
-
-    idx_max = np.arange(0, (xDim) * (Tmax - 1), xDim)
+    idx_max = np.arange(0, (xDim) * (Tmax ), xDim)
     covX_max = np.zeros((Tmax * xDim, Tmax * xDim))
     muX_max = np.zeros((Tmax * xDim, 1))
 
@@ -20,29 +29,58 @@ def allTrial_loglike_RBF_wrt(lam , params, infRes, binSize,eps=0.001,Tmax=600,is
     else:
         f = np.zeros(xDim, )
     for i in range(trial_num):
-        T = infRes['post_mean'][i].shape[1]
-        #T = length(Tvec);
+        T = meanPost[i].shape[1]
         idx = idx_max[:T]
         covX = covX_max[:T* xDim, :T * xDim]*0.
+        # print(covX.shape,covPost[0].shape,idx_max.shape,T)
         muX = muX_max[:T * xDim]*0.
         for h in range(xDim):
             xx,yy= np.meshgrid(idx+h,idx+h)
-            covX[xx,yy] = infRes['post_vsmGP'][i][:,:,h]
-            muX[idx + h,:] = infRes['post_mean'][i][h].reshape((-1,1))
-        f_tr = log_like_RBF_wrt_logTau(lam , C, eps, covX, muX, binSize,T,isGrad=isGrad)
+            covX[xx,yy] = covPost[i][h, :,:]
+            muX[idx + h] = meanPost[i][h,:].reshape((-1,1))
+        # muX = muX.reshape(-1,1)
+        f_tr = grad_expectedLLGPPrior(lam , eps, covX, muX, binSize,T,isGrad=isGrad)
         f = f + (f_tr / trial_num)
     return f
 
-def log_like_RBF_wrt_logTau(lam , eps, covX, muX, binSize, T,isGrad=False):
-    # dLogDetK_dLami, grad_xTKinvx, logDetK, xtKinvx = grad_log_det_K_RBF(lam , C, eps, covX, muX, binSize, T,isGrad=isGrad)
-    term1, term2 = grad_log_det_K_RBF(lam , eps, covX, muX, binSize, T,isGrad=isGrad)
+def grad_expectedLLGPPrior(lam , eps, covX, muX, binSize, T,isGrad=False):
+    """
+    Computes the expected log-likelihood of the GP prior as a funciton of the time constant
+    :param lam_0: transformed time constant such that K(t,s) = exp(-lam / 2 * |t-s|^2)
+    :param eps: noise parameter
+    :param covX: list, each element is a trial
+        contains the covariance in KT x KT formats (do not need the full posterior covariance since
+    the RBF covariance factorizes across latent dimensions
+    :param muX: list, each element is a trial
+        contains the posterior mean KT x 1
+    :param binSize: time sampling rate in ms
+    :param T: number of time points of a trial
+    :param isGrad: True: return gradient, False: return the function evaluation
+    :return:
+    """
+    term1, term2 = compGrad_expectedLLGPPrior(lam , eps, covX, muX, binSize, T,isGrad=isGrad)
 
     f = -0.5 * (term1 + term2)
 
     return f
 
 
-def grad_log_det_K_RBF(lam_0, eps, covX, muX, binSize, T,isGrad=False):
+def compGrad_expectedLLGPPrior(lam_0, eps, covX, muX, binSize, T,isGrad=False):
+    """
+    Computes the two components of expected log-likelihood of the GP prior as a funciton of the time constant or
+     its gradient. The first component is the -E[z\tr K z] and the second is -ln|K|
+    :param lam_0: transformed time constant such that K(t,s) = exp(-lam / 2 * |t-s|^2)
+    :param eps: noise parameter
+    :param covX: list, each element is a trial
+        contains the covariance in KT x KT formats (do not need the full posterior covariance since
+    the RBF covariance factorizes across latent dimensions
+    :param muX: list, each element is a trial
+        contains the posterior mean KT x 1
+    :param binSize: time sampling rate in ms
+    :param T: number of time points of a trial
+    :param isGrad: True: return gradient, False: return the function evaluation
+    :return: 
+    """
     if np.isscalar(eps):
         eps = np.array([eps]*len(lam_0))
 
@@ -80,6 +118,14 @@ def grad_log_det_K_RBF(lam_0, eps, covX, muX, binSize, T,isGrad=False):
         return dLogDetK_dLami, grad_xTKinvx
 
 def dK_dlamba_RBF(lam_0, Tvec, eps, binSize):
+    """
+    Compute the derivative of the RBF covariance wrt the time constant
+    :param lam_0: transformed time constant such that K(t,s) = exp(-lam / 2 * |t-s|^2)
+    :param Tvec: vector of time points
+    :param eps: noise parameter
+    :param binSize: spacing between consecutive time points in MS
+    :return: 
+    """
     if np.isscalar(eps):
         eps = np.ones(len(lam_0))*eps
     xDim = len(lam_0)
@@ -92,84 +138,31 @@ def dK_dlamba_RBF(lam_0, Tvec, eps, binSize):
         dK[k,:,:] = (1 - eps[k]) * 0.5 * (binSize**2 / ((tau[k] * 1000) ** 2)) * Tdif * np.exp(-(binSize**2 / ((tau[k] * 1000) ** 2)) * Tdif * 0.5)
     return dK
 
-def  make_K_big_Edo(params, T_samp):
-    T = len(T_samp)
-
-    xDim = params['C'].shape[1]
-
-    idx = np.arange(0, xDim * T, xDim)
-    K_big = np.zeros((xDim * T,)*2)
-    K_big_inv = np.zeros((xDim * T,)*2)
-    Tdif = (np.repeat(T_samp,T).reshape(T,T) - np.repeat(T_samp.reshape(len(T_samp),1), T).reshape(T,T).T) # Tdif_ij = (t_i - t_j)^2
-    logdet_K_big = 0
-
-    for i in range(xDim):
-        if params['covType'] == 'rbf':
-            K = (1 - params['eps'][i]) * np.exp(-params['gamma'][i] / 2 * Tdif ** 2) + params['eps'][i] * np.eye(T)
-        elif params['covType']:
-            K = np.max(1 - params['eps'][i] - params['a'][i] * np.abs(Tdif), axis=0) + params['eps'][i] * np.eye(T)
-        elif params['covType']:
-            z = np.dot(params['gamma'], (1 - params['eps'][i] - params['a'][i] * np.abs(Tdif)))
-            outUL = (z > 36)
-            outLL = (z < -19)
-            inLim = (~outUL) & (~outLL)
-
-            hz = np.zeros(z.shape) * np.nan
-            hz[outUL] = z[outUL]
-            hz[outLL] = np.exp(z[outLL])
-            hz[inLim] = np.log(1 + np.exp(z[inLim]))
-
-            K = np.linalg.solve(params['gamma'].reshape(1, -1), hz.T).T + params['eps'][i] * np.eye(T)
-        xx, yy = np.meshgrid(idx + i, idx + i)
-        K_big[xx,yy] = K
-        chl = np.linalg.cholesky(K)
-        Linv = np.linalg.solve(chl, np.eye(chl.shape[0]))
-        Kinv = np.dot(Linv.T, Linv)
-        logdet_K = 2 * np.sum(np.log(np.diag(chl)))
-        K_big_inv[xx,yy] = Kinv  # invToeplitz(K);
-        logdet_K_big = logdet_K_big + logdet_K
-
-    return K_big, K_big_inv, logdet_K_big
 
 if __name__=='__main__':
     from gen_synthetic_data import *
     import matplotlib.pylab as plt
+    from scipy.optimize import minimize
 
-    dat = dataGen(1,T=250)
+    dat = dataGen(150,T=50)
     C = dat.cca_input.stimPar['W0']
     lam_0 = 2*np.log(
-        ((dat.cca_input.priorPar[0]['tau']*dat.cca_input.binSize/1000))
+        ((dat.cca_input.priorPar[1]['tau']*dat.cca_input.binSize/1000))
                    )
-    eps = dat.cca_input.epsNoise
-    covX = dat.covPost[0][:len(lam_0)*dat.cca_input.trialDur[0],:len(lam_0)*dat.cca_input.trialDur[0]]
-    muX = dat.meanPost[0][:len(lam_0)*dat.cca_input.trialDur[0]]
-    # mnt,covt,_ = parse_fullCov(dat.cca_input, muX[0], covX[0], dat.cca_input.trialDur[0])
 
-    # allTrial_loglike_RBF_wrt(lam, params, infRes, binSize, eps=0.001, Tmax=600, isGrad=False)
-    func = lambda lam_0: -log_like_RBF_wrt_logTau(lam_0 , eps, covX, muX, dat.cca_input.binSize, dat.cca_input.trialDur[0],isGrad=False)
-    func_grad = lambda lam_0: -log_like_RBF_wrt_logTau(lam_0 , eps, covX, muX, dat.cca_input.binSize, dat.cca_input.trialDur[0],isGrad=True)
-    res = minimize(func,np.zeros(len(lam_0)),jac=func_grad,method='L-BFGS-B')
-
-    print('old tau:',dat.cca_input.priorPar[0]['tau'], ' - LL', -func(lam_0))
-
-    tau_neu = 1000/dat.cca_input.binSize * np.exp(res.x/2.)
-    print('new tau:', tau_neu, ' - LL', -func(res.x))
-    dat.cca_input.priorPar[0]['tau'] = tau_neu
+    mu_list = []
+    cov_list = []
+    for k in range(len(dat.cca_input.trialDur)):
+        m,s = parse_fullCov_latDim(dat.cca_input, dat.meanPost[k], dat.covPost[k], dat.cca_input.trialDur[k])
+        mu_list.append(m[1])
+        cov_list.append(s[1])
 
 
-    muX1, covX1 = inferTrial(dat.cca_input, 0)
-    muX1  = muX1[:len(lam_0) * dat.cca_input.trialDur[0]]
-    covX1 = covX1[:len(lam_0) * dat.cca_input.trialDur[0],:len(lam_0) * dat.cca_input.trialDur[0]]
-    plt.figure()
-    ax1 = plt.subplot(121)
-    ax1.plot(muX[::2])
-    ax1.plot(muX[1::2])
-    ax1.plot(dat.ground_truth_latent[0][:,0],'--')
-    ax1.plot(dat.ground_truth_latent[0][:,1],'--')
+    func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, dat.cca_input, mu_list, cov_list, dat.cca_input.binSize,eps,
+                                                  max(dat.cca_input.trialDur), isGrad=False)
+    func_grad = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, dat.cca_input, mu_list, cov_list, dat.cca_input.binSize,eps,
+                                                  max(dat.cca_input.trialDur)+1, isGrad=True)
+    res = minimize(func, np.zeros(len(lam_0)), jac=func_grad, method='L-BFGS-B',tol=10**-10)
 
-    ax2 = plt.subplot(122)
-    ax2.plot(muX1[::2])
-    ax2.plot(muX1[1::2])
-    ax2.plot(dat.ground_truth_latent[0][:, 0], '--')
-    ax2.plot(dat.ground_truth_latent[0][:, 1], '--')
-    xx =1
+
+    tau_from_lam = lambda lam: np.exp(lam/2)*1000/dat.cca_input.binSize

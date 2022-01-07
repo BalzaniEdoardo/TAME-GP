@@ -181,6 +181,44 @@ def parse_fullCov(data, meanPost, covPost, T):
 
     return mean_t, cov_ii_t, cov_0i_t
 
+def parse_fullCov_latDim(data, meanPost, covPost, T):
+    """
+    this function returns the t x k_i x k_i covariance block for the posterior. the posterior is arranged into
+    T blocks.
+    :return:
+    """
+
+    cov_ii_t = {}
+    mean_t = {}
+
+    cnt_dim = 0
+
+    for K in data.zdims:
+        idx = np.arange(0, K * T, K)
+        i0 = np.sum(data.zdims[:cnt_dim])*T
+
+        mean_k = meanPost[i0:i0 + K * T] # dim KT
+        cov_k = covPost[i0: i0 + K * T, i0: i0 + K * T] # dim KT x KT
+
+        # print(i0)
+
+        mean_t_k = np.zeros((K, T))
+        cov_ii_k = np.zeros((K,T, T))
+        for k in range(K):
+            # print(cnt_dim,K,t)
+            xx, yy = np.meshgrid(idx + k, idx + k)
+            cov_ii_k[k] = cov_k[xx, yy]
+            mean_t_k[k] = mean_k[idx+k]
+
+
+        cov_ii_t[cnt_dim] = deepcopy(cov_ii_k)
+        mean_t[cnt_dim] = deepcopy(mean_t_k)
+
+        cnt_dim += 1
+
+    return mean_t, cov_ii_t
+
+
 if __name__ == '__main__':
     from time import perf_counter
     from gen_synthetic_data import dataGen

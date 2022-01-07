@@ -1,3 +1,5 @@
+*.npy
+*.npz
 *.jpg
 core/__pycache__/*.pyc
 core/__pycache__/*
