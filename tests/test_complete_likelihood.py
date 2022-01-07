@@ -65,9 +65,10 @@ class TestLogLikelihood(unittest.TestCase):
         B = block_diag(*([np.ones((5,2))*2]*50))
         C = block_diag(*([np.ones((2,2))*3]*50))
         M = np.block([[A, B], [B.T, C]])
+        mu = np.ones(M.shape[0])
         MMOrig = block_diag(*([np.block([[np.ones((5,5)), np.ones((5,2))*2],
                                          [np.ones((2,5))*2,np.ones((2,2))*3]])]*50))
-        t_M = retrive_t_blocks_fom_cov(struc, 0, 1, [M])
+        _,t_M = retrive_t_blocks_fom_cov(struc, 0, 1, [mu],[M])#data, trNum, i_Latent, meanPost, covPost
         MM = block_diag(*t_M)
         self.assertEqual(np.abs(MM-MMOrig).sum(),0)
 
