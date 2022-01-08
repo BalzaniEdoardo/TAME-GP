@@ -1,6 +1,6 @@
 import numpy as np
 from inference import *
-from learning import *
+from learnPoissonParam import *
 from data_structure import *
 from data_processing_tools import emptyStruct
 

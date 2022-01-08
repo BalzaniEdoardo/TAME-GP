@@ -7,9 +7,9 @@ from inference import (inferTrial,makeK_big,retrive_t_blocks_fom_cov)
 from behav_class import emptyStruct
 from data_structure import P_GPCCA
 import unittest
-from learnGaussianObs import MStepGauss,grag_GaussLL_wrt_Rinv, grag_GaussLL_wrt_Wd
+from learnGaussianParam import MStepGauss,grag_GaussLL_wrt_Rinv, grag_GaussLL_wrt_Wd
 from data_processing_tools import approx_grad
-from learning import expectedLLPoisson,grad_expectedLLPoisson
+from learnPoissonParam import expectedLLPoisson,grad_expectedLLPoisson
 
 
 class TestMStep(unittest.TestCase):

@@ -3,13 +3,11 @@ import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
 from inference import (PpCCA_logLike,grad_PpCCA_logLike,hess_PpCCA_logLike,makeK_big,approx_grad,retrive_t_blocks_fom_cov)
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
-sys.path.append(os.path.join(basedir, 'firefly_utils'))
 sys.path.append(os.path.join(basedir, 'core'))
-from behav_class import emptyStruct
 from data_structure import P_GPCCA
 import unittest
 from scipy.linalg import block_diag
+from data_processing_tools import emptyStruct
 
 class TestLogLikelihood(unittest.TestCase):
     def setUp(self):

@@ -1,7 +1,7 @@
 import numpy as np
 from data_processing_tools import makeK_big
 
-def allTrial_grad_expectedLLGPPrior(lam , meanPost, covPost, binSize,eps=0.001,Tmax=600,isGrad=False):
+def allTrial_grad_expectedLLGPPrior(lam , meanPost, covPost, binSize,eps=0.001,Tmax=600,isGrad=False, trial_num=None):
     """
     Average over trial of the expected log-likelihood of the GP prior as a funciton of the time constant
     :param lam: transformed time constant such that K(t,s) = exp(-lam / 2 * |t-s|^2)
@@ -17,7 +17,8 @@ def allTrial_grad_expectedLLGPPrior(lam , meanPost, covPost, binSize,eps=0.001,T
     :return:
     """
     #trial_num = len(data.trialDur)
-    trial_num = len(meanPost)
+    if trial_num is None:
+        trial_num = len(meanPost)
     xDim = len(lam)
 
     idx_max = np.arange(0, (xDim) * (Tmax ), xDim)

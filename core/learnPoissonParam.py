@@ -72,6 +72,83 @@ def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
         return np.hstack(((dhh_C - dyhat_C).flatten(), (dhh_C1 - dyhat_C1).flatten(), dhh_d - dyhat_d))
     return np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))#dhh_d - dyhat_d, dhh_C - dyhat_C
 
+def all_trial_poissonLL(C, d, x_list, mean_post, cov_post, C1=None, isGrad=False):
+    """
+    Looop over trial and compute expected LL or its gradent for poisson obs
+    :param C:
+    :param d:
+    :param x_list:
+    :param mean_post:
+    :param cov_post:
+    :param C1:
+    :param isGrad:
+    :return:
+    """
+    if isGrad:
+        func = grad_expectedLLPoisson
+    else:
+        func = expectedLLPoisson
+    f = 0
+    for i in range(len(x_list)):
+        x = x_list[i]
+        meanPost = mean_post[i]
+        covPost = cov_post[i]
+        f = f + func(x, C, d, meanPost, covPost, C1=C1)
+
+    return f
+
+def learn_xPar(data, idx_latent, trial_num=None, isGrad=False, test=False):
+    """
+
+    :param isGrad: True return the gradient, False returns the funcion evaluation
+    :return:
+    """
+    if isGrad:
+        func = grad_expectedLLPoisson
+    else:
+        func = expectedLLPoisson
+    if trial_num is None:
+        trial_num = len(list(data.trialDur.values()))
+
+    # extract initial par values
+    C = data.xPar[idx_latent-1]['W0']
+    C1 = data.xPar[idx_latent-1]['W1']
+    d = data.xPar[idx_latent-1]['d']
+
+    xDim,K0 = C.shape
+    K1 = C1.shape[1]
+    T = np.sum(list(data.trialDur.values()))
+
+    x = np.zeros((T, xDim))
+    mean_post = np.zeros((T, K0+K1))
+    cov_post = np.zeros((T, K1+K0, K1+K0))
+    t0 = 0
+    for tr in data.trialDur.keys():
+
+        T_tr = data.trialDur[tr]
+        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
+        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
+        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:],(0,2,1))
+        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
+        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
+        t0 += T_tr
+
+    f = func(x, C, d, mean_post, cov_post, C1=C1)/trial_num
+    if test:
+        ff = lambda xx: -expectedLLPoisson(x, xx[:K0 * xDim].reshape(xDim, K0), xx[(K0+K1)*xDim:], mean_post,
+                                          cov_post, C1=xx[K0 * xDim:(K0+K1)*xDim].reshape(xDim, K1))
+        grad_ff = lambda xx: -grad_expectedLLPoisson(x, xx[:K0 * xDim].reshape(xDim, K0), xx[(K0+K1)*xDim:],
+                                                     mean_post, cov_post, C1=xx[K0 * xDim:(K0+K1)*xDim].reshape(xDim, K1))
+        xx0 = np.zeros(xDim*(K0+K1)+xDim)
+        ap_grad = approx_grad(xx0,xx0.shape[0],ff,10**-4)
+        grad = grad_ff(xx0)
+        err = np.abs(grad - ap_grad).mean()/np.abs(ap_grad).mean()
+        return err
+    return f
+
+
 
 if __name__ == '__main__':
     from inference import *
@@ -203,6 +280,8 @@ if __name__ == '__main__':
     # # print('GRADIENT NOT WORKING! fix')
 
     dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy', allow_pickle=True).all()
-    dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1, 4))
-    multiTrialInference(dat.cca_input)
-    learn_GaussianParams(dat.cca_input,test=True)
+    # dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1, 4))
+    # multiTrialInference(dat.cca_input)
+
+    f = learn_xPar(dat.cca_input, 1, trial_num = 3, isGrad = False)
+    gr_f = learn_xPar(dat.cca_input, 1, trial_num=3, isGrad=True)
