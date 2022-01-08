@@ -3,10 +3,7 @@ Implement a class that handles the input dataset conveniently.
 The class needs to store spikes and task variables, initialize parameters and select appropriately the data for the fits.
 """
 import numpy as np
-import os,sys,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
-sys.path.append(os.path.join(basedir,'firefly_utils'))
-from behav_class import emptyStruct
+from data_processing_tools import emptyStruct
 from copy import deepcopy
 
 class GP_pCCA_input(object):
@@ -164,11 +161,6 @@ class GP_pCCA_input(object):
 
 
 if __name__ == '__main__':
-    import sys,os,inspect
-    basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
-    sys.path.append(os.path.join(basedir, 'firefly_utils'))
-    sys.path.append(os.path.join(basedir, 'core'))
-    from behav_class import emptyStruct
     from inference import makeK_big
     from scipy.linalg import block_diag
     import seaborn as sbn

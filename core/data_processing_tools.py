@@ -1,9 +1,10 @@
 import numpy as np
-from numba import jit
 from scipy.linalg import block_diag
-import scipy.sparse as sparse
 from copy import deepcopy
 
+class emptyStruct(object):
+    def __init__(self):
+        return
 
 def invertHessBlock(B, zdim, T):
     """
@@ -160,11 +161,9 @@ def parse_fullCov(data, meanPost, covPost, T):
         cov_k = covPost[i0: i0 + K * T, i0: i0 + K * T]
         crosscov_k = covPost[:K0 * T, i0: i0 + K * T]
 
-        print(i0)
-
         mean_t_k = np.zeros((T, K))
         cov_ii_k = np.zeros((T, K, K))
-        cov_0i_k = np.zeros((T,K0, K))
+        cov_0i_k = np.zeros((T, K0, K))
         for t in range(T):
             # print(cnt_dim,K,t)
             cov_ii_k[t] = cov_k[t * K: (t + 1) * K, t * K: (t + 1) * K]

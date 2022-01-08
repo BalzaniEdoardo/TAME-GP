@@ -2,10 +2,7 @@ import numpy as np
 from inference import *
 from learning import *
 from data_structure import *
-import sys,os,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
-sys.path.append(os.path.join(basedir,'firefly_utils'))
-from behav_class import emptyStruct
+from data_processing_tools import emptyStruct
 
 class dataGen(object):
 
