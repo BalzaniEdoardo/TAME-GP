@@ -2,10 +2,7 @@ import numpy as np
 import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
-sys.path.append(os.path.join(basedir, 'firefly_utils'))
-sys.path.append(os.path.join(basedir, 'core'))
-from behav_class import emptyStruct
+
 from data_structure import *
 import unittest
 from scipy.linalg import block_diag
@@ -13,7 +10,7 @@ from scipy.optimize import minimize
 from scipy.stats import pearsonr
 from gen_synthetic_data import dataGen
 from learnGPParams import allTrial_grad_expectedLLGPPrior
-from data_processing_tools import parse_fullCov_latDim,approx_grad
+from data_processing_tools import parse_fullCov_latDim,approx_grad,emptyStruct
 
 class TestGPLearning(unittest.TestCase):
     def setUp(self):

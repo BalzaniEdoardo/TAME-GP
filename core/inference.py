@@ -494,9 +494,11 @@ if __name__ == '__main__':
     # precision[precision==0] = np.nan
     # plt.close('all')
     # precResh = retrive_t_blocks_fom_cov(struc,0,1,[precision])
-
+    import sys
+    from data_structure import P_GPCCA
+    sys.path.append('/Users/edoardo/Work/Code/P-GPCCA/firefly_utils')
     dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy',allow_pickle=True).all()
-    dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1,4))
-    multiTrialInference(dat.cca_input)
-    multiTrialInference(dat.cca_input)
+    # dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1,4))
+    # multiTrialInference(dat.cca_input)
+    # multiTrialInference(dat.cca_input)
 
