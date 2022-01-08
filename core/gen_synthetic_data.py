@@ -93,7 +93,7 @@ class dataGen(object):
         truePriorPar = [{'tau': tau0}, {'tau': tau2 }, {'tau': tau3}]
 
         # create the data structure
-        self.cca_input = GP_pCCA_input(preproc, list(preproc.covariates.keys()), ['A', 'B'],
+        self.cca_input = P_GPCCA(preproc, list(preproc.covariates.keys()), ['A', 'B'],
                                    np.array(['A'] * N + ['B'] * N1),
                                    np.ones(preproc.ydim, dtype=bool))
         self.cca_input.initializeParam([K0, K2, K3])

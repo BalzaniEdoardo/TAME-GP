@@ -7,7 +7,7 @@ basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe()
 sys.path.append(os.path.join(basedir, 'firefly_utils'))
 sys.path.append(os.path.join(basedir, 'core'))
 from behav_class import emptyStruct
-from data_structure import GP_pCCA_input
+from data_structure import P_GPCCA
 import unittest
 from scipy.linalg import block_diag
 
@@ -51,7 +51,7 @@ class TestLogLikelihood(unittest.TestCase):
 
 
         # create the data struct
-        self.struc = GP_pCCA_input(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
+        self.struc = P_GPCCA(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
                               np.ones(preproc.ydim, dtype=bool))
         self.struc.initializeParam([K0, self.z1.shape[1]])
         self.epsNoise=0.001

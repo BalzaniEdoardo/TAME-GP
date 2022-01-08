@@ -6,7 +6,7 @@ import numpy as np
 from data_processing_tools import emptyStruct
 from copy import deepcopy
 
-class GP_pCCA_input(object):
+class P_GPCCA(object):#P_GPCCA
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001):
         """
         :param preProc: structure with attributes:
@@ -204,6 +204,6 @@ if __name__ == '__main__':
 
 
     # create the data struct
-    struc = GP_pCCA_input(preproc,['var1','var2'],['PPC'],np.array(['PPC']*preproc.ydim),np.ones(preproc.ydim,dtype=bool))
+    struc = P_GPCCA(preproc,['var1','var2'],['PPC'],np.array(['PPC']*preproc.ydim),np.ones(preproc.ydim,dtype=bool))
     struc.initializeParam([2,1])
     a = struc.subSampleTrial(np.arange(2,5))

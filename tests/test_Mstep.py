@@ -5,10 +5,11 @@ sys.path.append(os.path.join(basedir,'core'))
 sys.path.append(os.path.join(basedir,'firefly_utils'))
 from inference import (inferTrial,makeK_big,retrive_t_blocks_fom_cov)
 from behav_class import emptyStruct
-from data_structure import GP_pCCA_input
+from data_structure import P_GPCCA
 import unittest
-from learning import expectedLLPoisson,grad_expectedLLPoisson,MStepGauss,dLoss_dRinv, dLoss_dWd
+from learnGaussianObs import MStepGauss,grag_GaussLL_wrt_Rinv, grag_GaussLL_wrt_Wd
 from data_processing_tools import approx_grad
+from learning import expectedLLPoisson,grad_expectedLLPoisson
 
 
 class TestMStep(unittest.TestCase):
@@ -87,7 +88,7 @@ class TestMStep(unittest.TestCase):
         truePriorPar = [{'tau': self.tau0}, {'tau': self.tau2}, {'tau': self.tau3}]
 
         # create the data structure
-        self.struc = GP_pCCA_input(preproc, list(preproc.covariates.keys()), ['A', 'B'],
+        self.struc = P_GPCCA(preproc, list(preproc.covariates.keys()), ['A', 'B'],
                                    np.array(['A'] * self.N + ['B'] * self.N1),
                                    np.ones(preproc.ydim, dtype=bool))
         self.struc.initializeParam([self.K0, self.K2, self.K3])
@@ -111,12 +112,12 @@ class TestMStep(unittest.TestCase):
         mean_t, cov_t = retrive_t_blocks_fom_cov(self.struc, 0, 0, [self.meanPost], [self.covPost])
         Wnew, dnew, PsiNew = MStepGauss(x1, mean_t, cov_t)
 
-        grad1 = dLoss_dWd(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)
+        grad1 = grag_GaussLL_wrt_Wd(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)
         err1 = (np.abs(grad1).max())
         print('gradient theo [W,d] max error', err1)
 
         # func = lambda xx: logLike_Gauss(x1, Wnew, dnew, xx.reshape(Psi.shape), mean_t, cov_t)
-        grad2 = dLoss_dRinv(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)
+        grad2 = grag_GaussLL_wrt_Rinv(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)
         err2 = (np.abs(grad2).max())
 
         print('gradient theo Psi^-1 max error', err2)

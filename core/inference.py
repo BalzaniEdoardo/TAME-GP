@@ -244,6 +244,14 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     return hess_logLike
 
 def inferTrial(data, trNum, zbar=None):
+    """
+    Laplace inference for an individual trial
+    :param data: P_GPCCA
+        The P-GPCCA input 
+    :param trNum: int
+    :param zbar: 
+    :return: 
+    """
     # retrive outputs
     stim, xList = data.get_observations(trNum)
     priorPar = data.priorPar
@@ -271,11 +279,17 @@ def inferTrial(data, trNum, zbar=None):
     precision = -(hess_PpCCA_logLike(zbar, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
                   binSize=data.binSize, epsNoise=data.epsNoise))
     laplAppCov = invertHessBlock(precision, data.zdims, data.trialDur[trNum])
-    # laplAppCov = np.linalg.inv(precision)
 
     return zbar, laplAppCov
 
 def multiTrialInference(data):
+    """
+    Laplace inference for all trials and store the result in the data structure.
+    :param data: CCA_input_data
+        - the whole input data (or a subset)
+    :return:
+        - None
+    """
     if 'posterior_inf' not in data.__dict__.keys():
         data.posterior_inf = {}
 
@@ -309,6 +323,7 @@ def multiTrialInference(data):
         data.posterior_inf[tr].cov_t = cov_ii_t
         data.posterior_inf[tr].cross_cov_t = cov_0i_t
         data.posterior_inf[tr].cov_k = cov_ii_k
+    return
 
 
 
@@ -381,7 +396,7 @@ if __name__ == '__main__':
     # truePriorPar = [{'tau':tau0}, {'tau':tau}]
     #
     # # create the data struct
-    # struc = GP_pCCA_input(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
+    # struc = P_GPCCA(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
     #                       np.ones(preproc.ydim, dtype=bool))
     # struc.initializeParam([K0, z1.shape[1]])
     # stim, xList = struc.get_observations(0)
