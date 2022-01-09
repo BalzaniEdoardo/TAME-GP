@@ -498,7 +498,7 @@ if __name__ == '__main__':
     from data_structure import P_GPCCA
     sys.path.append('/Users/edoardo/Work/Code/P-GPCCA/firefly_utils')
     dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy',allow_pickle=True).all()
-    # dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1,4))
-    # multiTrialInference(dat.cca_input)
-    # multiTrialInference(dat.cca_input)
+    sub = dat.subSampleTrial(np.arange(1,4))
+    multiTrialInference(sub)
+    # multiTrialInference(dat.)
 

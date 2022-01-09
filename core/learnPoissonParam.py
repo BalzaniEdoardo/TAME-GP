@@ -107,6 +107,7 @@ def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False
         func = grad_expectedLLPoisson
     else:
         func = expectedLLPoisson
+
     if trial_num is None:
         trial_num = len(list(data.trialDur.values()))
 
@@ -120,13 +121,15 @@ def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False
 
     xDim,K0 = W0.shape
     K1 = W1.shape[1]
-    T = np.sum(list(data.trialDur.values()))
+    T = 0
+    for tr in trial_list:
+        T += data.trialDur[tr] #np.sum(list(data.trialDur.values()))
 
     x = np.zeros((T, xDim))
     mean_post = np.zeros((T, K0+K1))
     cov_post = np.zeros((T, K1+K0, K1+K0))
     t0 = 0
-    for tr in data.trialDur.keys():
+    for tr in trial_list:
 
         T_tr = data.trialDur[tr]
         x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
