@@ -90,8 +90,11 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3):
     return LL_list
 
 if __name__ == '__main__':
-    dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy', allow_pickle=True).all()
+    from gen_synthetic_data import dataGen
+    dat = dataGen(trNum=150, T=50, D=2, N=20,N1=20, K0=1, K2=3, K3=3)
+    dat = dat.cca_input
+    # dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy', allow_pickle=True).all()
     dat.initializeParam(dat.zdims)
-    ll_list = expectation_mazimization(dat, maxIter=10, tol=10 ** -3)
+    ll_list = expectation_mazimization(dat, maxIter=20, tol=10 ** -4)
     np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/em10iter_sim_150Trials.npz',dat=dat,ll=ll_list)
 

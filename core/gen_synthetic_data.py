@@ -6,14 +6,8 @@ from data_processing_tools import emptyStruct
 
 class dataGen(object):
 
-    def __init__(self, trNum,T=50):
+    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6):
         super(dataGen,self).__init__()
-        D = 4
-        K2 = 5
-        K3 = 3
-        K0 = 2
-        N = 7
-        N1 = 6
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
         ## derivative of the exponential being monotonic). The larger the T the more the error is accumulating so
         # eventually the precision in the approx derivative will be lost.
@@ -107,11 +101,12 @@ class dataGen(object):
         self.meanPost = []
         self.covPost = []
 
-        for tr in range(trNum):
-            print('infer trial %d'%tr)
-            meanPost, covPost = inferTrial(self.cca_input, tr)
-            self.meanPost.append(meanPost)
-            self.covPost.append(covPost)
+        multiTrialInference(self.cca_input)
+        # for tr in range(trNum):
+        #     print('infer trial %d'%tr)
+        #     meanPost, covPost = inferTrial(self.cca_input, tr)
+            # self.meanPost.append(meanPost)
+            # self.covPost.append(covPost)
 
 if __name__ == '__main__':
     from data_processing_tools import retrive_t_blocks_fom_cov
