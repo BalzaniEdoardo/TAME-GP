@@ -294,7 +294,7 @@ def multiTrialInference(data):
         data.posterior_inf = {}
 
     for tr in data.trialDur.keys():
-        print('infer trial: %d'%tr)
+        #print('infer trial: %d'%tr)
         if tr not in data.posterior_inf.keys():
             zbar = None
         else:
