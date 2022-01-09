@@ -118,7 +118,7 @@ if __name__ == '__main__':
     import matplotlib.pylab as plt
     from time import perf_counter
     t0 = perf_counter()
-    data = dataGen(1,T=63)
+    data = dataGen(150,T=50)
     t1 = perf_counter()
     print(t1-t0)
     i_latent = 2

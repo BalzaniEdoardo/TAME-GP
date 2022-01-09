@@ -72,32 +72,32 @@ def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
         return np.hstack(((dhh_C - dyhat_C).flatten(), (dhh_C1 - dyhat_C1).flatten(), dhh_d - dyhat_d))
     return np.hstack(((dhh_C - dyhat_C).flatten(), dhh_d - dyhat_d))#dhh_d - dyhat_d, dhh_C - dyhat_C
 
-def all_trial_poissonLL(C, d, x_list, mean_post, cov_post, C1=None, isGrad=False):
-    """
-    Looop over trial and compute expected LL or its gradent for poisson obs
-    :param C:
-    :param d:
-    :param x_list:
-    :param mean_post:
-    :param cov_post:
-    :param C1:
-    :param isGrad:
-    :return:
-    """
-    if isGrad:
-        func = grad_expectedLLPoisson
-    else:
-        func = expectedLLPoisson
-    f = 0
-    for i in range(len(x_list)):
-        x = x_list[i]
-        meanPost = mean_post[i]
-        covPost = cov_post[i]
-        f = f + func(x, C, d, meanPost, covPost, C1=C1)
+# def all_trial_poissonLL(C, d, x_list, mean_post, cov_post, C1=None, isGrad=False):
+#     """
+#     Looop over trial and compute expected LL or its gradent for poisson obs
+#     :param C:
+#     :param d:
+#     :param x_list:
+#     :param mean_post:
+#     :param cov_post:
+#     :param C1:
+#     :param isGrad:
+#     :return:
+#     """
+#     if isGrad:
+#         func = grad_expectedLLPoisson
+#     else:
+#         func = expectedLLPoisson
+#     f = 0
+#     for i in range(len(x_list)):
+#         x = x_list[i]
+#         meanPost = mean_post[i]
+#         covPost = cov_post[i]
+#         f = f + func(x, C, d, meanPost, covPost, C1=C1)
+#
+#     return f
 
-    return f
-
-def learn_xPar(data, idx_latent, trial_num=None, isGrad=False, test=False):
+def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False, trial_list=None, test=False):
     """
 
     :param isGrad: True return the gradient, False returns the funcion evaluation
@@ -110,13 +110,16 @@ def learn_xPar(data, idx_latent, trial_num=None, isGrad=False, test=False):
     if trial_num is None:
         trial_num = len(list(data.trialDur.values()))
 
-    # extract initial par values
-    C = data.xPar[idx_latent-1]['W0']
-    C1 = data.xPar[idx_latent-1]['W1']
-    d = data.xPar[idx_latent-1]['d']
+    if trial_list is None:
+        trial_list = list(data.trialDur.keys())
 
-    xDim,K0 = C.shape
-    K1 = C1.shape[1]
+    # C1=0
+    # C=0
+    # d=0
+
+
+    xDim,K0 = W0.shape
+    K1 = W1.shape[1]
     T = np.sum(list(data.trialDur.values()))
 
     x = np.zeros((T, xDim))
@@ -135,7 +138,7 @@ def learn_xPar(data, idx_latent, trial_num=None, isGrad=False, test=False):
         mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
         t0 += T_tr
 
-    f = func(x, C, d, mean_post, cov_post, C1=C1)/trial_num
+    f = func(x, W0, d, mean_post, cov_post, C1=W1)/trial_num
     if test:
         ff = lambda xx: -expectedLLPoisson(x, xx[:K0 * xDim].reshape(xDim, K0), xx[(K0+K1)*xDim:], mean_post,
                                           cov_post, C1=xx[K0 * xDim:(K0+K1)*xDim].reshape(xDim, K1))
@@ -146,6 +149,21 @@ def learn_xPar(data, idx_latent, trial_num=None, isGrad=False, test=False):
         grad = grad_ff(xx0)
         err = np.abs(grad - ap_grad).mean()/np.abs(ap_grad).mean()
         return err
+    return f
+
+def all_trial_PoissonLL(W0,W1,d, data, idx_latent, block_trials=None, isGrad=False):
+    if block_trials is None:
+        block_trials = len(data.trialDur.keys())
+    all_trials = list(data.trialDur.keys())
+
+    trial_list = []
+    nBlocks = int(np.ceil(len(all_trials) /block_trials))
+    for k in range(nBlocks):
+        trial_list.append(all_trials[k*block_trials:(k+1)*block_trials])
+    f = 0
+    for tl in trial_list:
+        f = f + multiTrial_PoissonLL(W0,W1,d,data, idx_latent, trial_num=len(all_trials), isGrad=isGrad, trial_list=tl, test=False)
+
     return f
 
 
@@ -283,5 +301,24 @@ if __name__ == '__main__':
     # dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1, 4))
     # multiTrialInference(dat.cca_input)
 
-    f = learn_xPar(dat.cca_input, 1, trial_num = 3, isGrad = False)
-    gr_f = learn_xPar(dat.cca_input, 1, trial_num=3, isGrad=True)
+    # f = multiTrial_PoissonLL(dat.cca_input, 1, trial_num = 3, isGrad = False)
+    # gr_f = multiTrial_PoissonLL(dat.cca_input, 1, trial_num=3, isGrad=True)
+    # extract initial par values
+    idx_latent = 1
+    C = dat.xPar[idx_latent - 1]['W0']
+    C1 = dat.xPar[idx_latent - 1]['W1']
+    d = dat.xPar[idx_latent - 1]['d']
+    N,K0 = C.shape
+    K1=C1.shape[1]
+
+    f = all_trial_PoissonLL(C,C1,d, dat, idx_latent, block_trials=31, isGrad=False)
+    g = all_trial_PoissonLL(C,C1,d,dat, idx_latent, block_trials=31, isGrad=True)
+    xx = np.hstack((C.flatten(),C1.flatten(),d))
+    func = lambda xx: -all_trial_PoissonLL(xx[:N*K0].reshape(N,K0), xx[N*K0:N*(K0+K1)].reshape(N,K1),xx[N*(K0+K1):],
+                               dat, idx_latent, block_trials=31, isGrad=False)
+    gr_func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0), xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                          xx[N * (K0 + K1):],
+                                          dat, idx_latent, block_trials=31, isGrad=True)
+
+    # ap_grad = approx_grad(xx,xx.shape[0],func,10**-5)
+    res = minimize(func,np.zeros(xx.shape),jac=gr_func,method='L-BFGS-B',tol=10**-10)

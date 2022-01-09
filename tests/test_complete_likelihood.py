@@ -3,7 +3,6 @@ import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
 from inference import (PpCCA_logLike,grad_PpCCA_logLike,hess_PpCCA_logLike,makeK_big,approx_grad,retrive_t_blocks_fom_cov)
-sys.path.append(os.path.join(basedir, 'core'))
 from data_structure import P_GPCCA
 import unittest
 from scipy.linalg import block_diag
