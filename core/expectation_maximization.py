@@ -37,7 +37,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3):
 
     # start the EM
     for ii in range(maxIter):
-        print('EM iteration: %d/%d'%(ii,maxIter))
+        print('EM iteration: %d/%d'%(ii+1,maxIter))
         # infer latent
         print('- E-step')
         multiTrialInference(data)
@@ -63,7 +63,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3):
                                                       xx[N * (K0 + K1):],
                                                       data, k+1, block_trials=100, isGrad=True)
 
-            print('- Poisson M-step, observed population: %d/%d'%(k,len(data.zdims)-1))
+            print('- Poisson M-step, observed population: %d/%d'%(k+1,len(data.zdims)-1))
             res = minimize(func, np.zeros(parStack.shape), jac=gr_func, method='L-BFGS-B', tol=10 ** -10)
             if res.success or res.fun < func(parStack):
                 data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
@@ -79,7 +79,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3):
             func = lambda lam0: -all_trial_GPLL(lam0, data, k, block_trials=1, isGrad=False)
             gr_func = lambda lam0: -all_trial_GPLL(lam0, data, k, block_trials=1, isGrad=True)
 
-            print('- GP M-step, latent factor: %d/%d'%(k,len(data.zdims)))
+            print('- GP M-step, latent factor: %d/%d'%(k+1,len(data.zdims)))
             res = minimize(func, lam0, jac=gr_func, method='L-BFGS-B', tol=10 ** -10)
             if res.success or res.fun < func(lam0):
                 data.priorPar[k]['tau'] = np.exp(res.x/2)*1000/data.binSize

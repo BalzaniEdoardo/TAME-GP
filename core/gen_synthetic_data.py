@@ -8,6 +8,7 @@ class dataGen(object):
 
     def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6):
         super(dataGen,self).__init__()
+        np.random.seed(4)
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
         ## derivative of the exponential being monotonic). The larger the T the more the error is accumulating so
         # eventually the precision in the approx derivative will be lost.
@@ -55,7 +56,7 @@ class dataGen(object):
 
         for k in range(D):
             preproc.covariates['var%d' % k] = []
-        self.ground_truth_latent = []
+        ground_truth_latent = []
         for tr in range(trNum):
             z = np.random.multivariate_normal(mean=np.zeros(K0 * T), cov=K_big0, size=1).reshape(K0, T).T
             z2 = np.random.multivariate_normal(mean=np.zeros(K2 * T), cov=K_big2, size=1).reshape(K2,T).T
@@ -73,7 +74,7 @@ class dataGen(object):
 
             preproc.data.append({'Y': np.hstack([x2, x3])})
 
-            self.ground_truth_latent.append(np.hstack((z,z2,z3)))
+            ground_truth_latent.append(np.hstack((z,z2,z3)))
 
         ## infer trials
 
@@ -90,12 +91,19 @@ class dataGen(object):
         self.cca_input = P_GPCCA(preproc, list(preproc.covariates.keys()), ['A', 'B'],
                                    np.array(['A'] * N + ['B'] * N1),
                                    np.ones(preproc.ydim, dtype=bool))
+        self.cca_input.ground_truth_latent = ground_truth_latent
         self.cca_input.initializeParam([K0, K2, K3])
         # set the parameters to the true value
         self.cca_input.xPar = trueObsPar
         self.cca_input.priorPar = truePriorPar
         self.cca_input.stimPar = trueStimPar
         self.cca_input.epsNoise = epsNoise
+
+        self.cca_input.ground_truth_xPar = deepcopy(trueObsPar)
+        self.cca_input.ground_truth_priorPar = deepcopy(truePriorPar)
+        self.cca_input.ground_truth_stimPar = deepcopy(trueStimPar)
+
+
 
         # infer trials
         self.meanPost = []
