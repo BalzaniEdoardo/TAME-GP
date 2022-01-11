@@ -282,7 +282,7 @@ def inferTrial(data, trNum, zbar=None):
 
     return zbar, laplAppCov
 
-def multiTrialInference(data):
+def multiTrialInference(data, plot_trial=False):
     """
     Laplace inference for all trials and store the result in the data structure.
     :param data: CCA_input_data
@@ -294,7 +294,8 @@ def multiTrialInference(data):
         data.posterior_inf = {}
 
     for tr in data.trialDur.keys():
-        #print('infer trial: %d'%tr)
+        if plot_trial:
+            print('infer trial: %d/%d'%(tr,len(data.trialDur.keys())))
         if tr not in data.posterior_inf.keys():
             zbar = None
         else:

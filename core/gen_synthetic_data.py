@@ -8,7 +8,7 @@ class dataGen(object):
 
     def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6):
         super(dataGen,self).__init__()
-        np.random.seed(4)
+        np.random.seed(90)
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
         ## derivative of the exponential being monotonic). The larger the T the more the error is accumulating so
         # eventually the precision in the approx derivative will be lost.
@@ -117,6 +117,7 @@ class dataGen(object):
             # self.covPost.append(covPost)
 
 if __name__ == '__main__':
+    import matplotlib.pylab as plt
     from data_processing_tools import retrive_t_blocks_fom_cov
     import matplotlib.pylab as plt
     from time import perf_counter

@@ -1,3 +1,4 @@
+*.mat
 *.npy
 *.npz
 *.jpg

@@ -194,8 +194,9 @@ if __name__=='__main__':
     # tau_from_lam = lambda lam: np.exp(lam/2)*1000/dat.cca_input.binSize
     idx_latent = 1
     data = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy',allow_pickle=True).all()
-
+    np.random.rand(4)
     tau = np.random.uniform(0.2,1.2,size=data.priorPar[idx_latent]['tau'].shape[0])
+    tau=np.array([0.61061895, 0.2510141, 0.57811751, 0.85722733, 0.5862096])
     lam0 = 2 * np.log(((tau * data.binSize/1000)))
 
     f = all_trial_GPLL(lam0, data, idx_latent, block_trials=40, isGrad=False)

@@ -58,12 +58,13 @@ class P_GPCCA(object):#P_GPCCA
                 self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
 
 
-    def initializeParam(self, zdims):
+    def initializeParam(self, zdims, use_poissonPCA=False):
         """
         Naive params initialization using random projection weights.
         :param zdims: list of the latent dimensions
 
         """
+        assert((len(zdims)-1) == len(self.area_list))
         # get the observation dim
         stimDim = len(self.var_list)
 
@@ -80,15 +81,61 @@ class P_GPCCA(object):#P_GPCCA
                 cc += 1
             stimCov = stimCov + np.cov(trStim)/self.preproc.numTrials
 
+        # extract all spikes
+        spikes = np.zeros([self.preproc.ydim, np.sum(list(self.trialDur.values()))])
+        stim_all = np.zeros([len(self.var_list), np.sum(list(self.trialDur.values()))])
+        cc = 0
+        for tr in self.trialDur.keys():
+            T = self.preproc.data[tr]['Y'].shape[0]
+            spikes[:, cc:cc + T] = self.preproc.data[tr]['Y'].T
+            var_cc = 0
+            for var in self.var_list:
+                stim_all[var_cc, cc:cc + T] = self.preproc.covariates[var][tr]
+            cc += T
+
         xDims = []
         xLogMeans = []
+        W1_list = []
+        W0_list = []
+        cc = 1
         for area in self.area_list:
             sel = self.filter_unit * (self.unit_area == area)
             xDims.append(sel.sum())
-            xMeans_area = np.zeros(xDims[-1])
-            for tr in self.preproc.data.keys():
-                xMeans_area = (xMeans_area + np.nanmean(self.preproc.data[tr]['Y'][:,sel],axis=0) /self.preproc.numTrials)
+            xMeans_area = np.mean(spikes[sel],1) + 1e-10
             xLogMeans.append(np.log(xMeans_area))
+            if use_poissonPCA:
+                covY = np.cov(spikes[sel])
+
+                # moment conversion between Poisson & Gaussian with exponential nonlinearity (taken from K. Machens code)
+                lamb = np.log(np.abs(covY + np.outer(xMeans_area, xMeans_area) - np.diag(xMeans_area))) - np.log(np.outer(xMeans_area, xMeans_area))
+                # PCA
+                evals, evecs = np.linalg.eig(lamb)
+                idx = np.argsort(evals)[::-1]
+                evecs = evecs[:, idx]
+                # sort eigenvectors according to same index
+                evals = evals[idx]
+                # select the first xdim eigenvectors
+                evecs = evecs[:, :zdims[cc]]
+                W1_list.append(evecs)
+
+                # repeat for CCA
+                Y = np.vstack((spikes[sel], stim_all))
+                covY = np.cov(Y)
+                ee,U = np.linalg.eigh(covY[:sel.sum(),:sel.sum()])
+                sqrtY11  = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
+                ee2, U2 = np.linalg.eigh(covY[sel.sum():, sel.sum():])
+                sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
+                M = np.dot(np.dot(sqrtY11, covY[:sel.sum(),sel.sum():]),sqrtY22)
+                V1,d,V2 = np.linalg.svd(M)
+                V1 = np.dot(sqrtY11, V1)
+                idx = np.argsort(d)
+                V1 = V1[:, idx]
+                W0_list.append(np.log(np.abs(V1[:,:zdims[0]])))
+
+            else:
+                W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
+                W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0])))
+            cc += 1
 
         # zdims are the dimensinons of the latent variables
         priorPar = []
@@ -98,14 +145,14 @@ class P_GPCCA(object):#P_GPCCA
         stimPar = {
             'W0': 0.01 * np.random.normal(size=(stimDim, zdims[0])),
             'd' : stimMean,
-            'PsiInv': np.linalg.pinv(stimCov + np.eye(stimDim)*0.001)
+            'PsiInv': np.linalg.pinv(stimCov + np.eye(stimDim)*0.0001)
         }
 
         xParams = []
         for kk in range(len(xDims)):
             pars = {
-                'W0': 0.01 * np.random.normal(size=(xDims[kk], zdims[0])),
-                'W1': 0.01 * np.random.normal(size=(xDims[kk], zdims[kk+1])),
+                'W0': W0_list[kk],
+                'W1': W1_list[kk],
                 'd' : xLogMeans[kk]
             }
             xParams.append(pars)
@@ -246,7 +293,7 @@ class GP_pCCA_input(object):#P_GPCCA
         # zdims are the dimensinons of the latent variables
         priorPar = []
         for kk in zdims:
-            priorPar.append({'tau': np.random.rand(kk)*0.5})
+            priorPar.append({'tau': np.random.uniform(0.1,1,size=kk)})
 
         stimPar = {
             'W0': 0.01 * np.random.normal(size=(stimDim, zdims[0])),
