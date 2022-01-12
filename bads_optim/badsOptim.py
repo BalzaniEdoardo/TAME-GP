@@ -8,15 +8,15 @@ Created on Mon Jan 10 21:03:41 2022
 import matlab
 import matlab.engine as eng
 import numpy as np
-
+import os
 
 
 class badsOptim(object):
     def __init__(self,dat):
         print('preparing for bads optim')
         self.eng = eng.start_matlab()
-        self.eng.addpath(self.eng.genpath('/Users/edoardo/Work/Code/bads'))
-        self.eng.addpath(self.eng.genpath('badsOptim/'))
+        self.eng.addpath(self.eng.genpath('../../bads'))
+        self.eng.addpath(os.path.join(os.path.abspath(os.curdir), 'badsCompatible_objectives'))
         self.x = []
         for kk in range(len(dat.zdims)-1):
             self.x += [[]]

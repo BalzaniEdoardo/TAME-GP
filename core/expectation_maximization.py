@@ -171,23 +171,23 @@ if __name__ == '__main__':
     K0=1
     K2=2
     K3=3
-    trNum = 300
+    trNum = 3
     emIter = 4
     dat = dataGen(trNum=trNum, T=50, D=2, N=3,N1=20, K0=K0, K2=K2, K3=K3)
 
-    cca_input1 = deepcopy(dat.cca_input)
+    # cca_input1 = deepcopy(dat.cca_input)
     cca_input2 = deepcopy(dat.cca_input)
     cca_input2.initializeParam([K0,K2,K3], use_poissonPCA=True)
 
 
-    multiTrialInference(cca_input1, plot_trial=True)
-    LL = computeLL(cca_input1)[0]
+    # multiTrialInference(cca_input1, plot_trial=True)
+    # LL = computeLL(cca_input1)[0]
 
     # multiTrialInference(cca_input2, plot_trial=True)
 
-    print(computeLL(cca_input1))
+    # print(computeLL(cca_input1))
     print(computeLL(cca_input2))
-    print('MAX LL: ',LL)
+    # print('MAX LL: ',LL)
     ll = expectation_mazimization(cca_input2,maxIter=emIter,use_badsGP=use_badsGP,use_badsPoisson=use_badsPoisson)
     if use_badsGP and use_badsPoisson:
         np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSGP_BADSPoisson_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
