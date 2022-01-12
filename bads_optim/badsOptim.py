@@ -15,7 +15,7 @@ class badsOptim(object):
     def __init__(self,dat):
         print('preparing for bads optim')
         self.eng = eng.start_matlab()
-        self.eng.addpath(self.eng.genpath('/Users/edoardo/Work/Code/bads'))
+        self.eng.addpath(self.eng.genpath('../../bads'))
         self.eng.addpath(self.eng.genpath('badsOptim/'))
         self.x = []
         for kk in range(len(dat.zdims)-1):
