@@ -131,7 +131,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                 f,g = gpOptim.bads_optim(data,k)
 
                 f = np.squeeze(f)
-                if len(f.shape) is 0:
+                if len(f.shape) == 0:
                     f = np.reshape(f,1)
                 data.priorPar[k]['tau'] = f
                 # print(data.priorPar[k]['tau'],g)
@@ -167,7 +167,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
 if __name__ == '__main__':
     from gen_synthetic_data import dataGen
     use_badsGP = True
-    use_badsPoisson = False
+    use_badsPoisson = True
     K0=1
     K2=2
     K3=3
