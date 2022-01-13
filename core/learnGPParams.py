@@ -159,9 +159,17 @@ def all_trial_GPLL(lam, data, idx_latent, block_trials=None, isGrad=False):
             Tmax = max(Tmax,data.posterior_inf[tr].mean[idx_latent].shape[1])
             mu_list.append(data.posterior_inf[tr].mean[idx_latent])
             cov_list.append(data.posterior_inf[tr].cov_k[idx_latent])
-
-        f = f + allTrial_grad_expectedLLGPPrior(lam , mu_list, cov_list, data.binSize,
+            try:
+                f = f + allTrial_grad_expectedLLGPPrior(lam , mu_list, cov_list, data.binSize,
                                                 eps=data.epsNoise,Tmax=Tmax,isGrad=isGrad, trial_num=trial_num)
+            except np.linalg.LinAlgError:
+                if isGrad:
+                    return -np.ones(lam.shape)*np.inf
+                else:
+                    return -np.inf
+
+    # if isGrad:
+    #     print( np.linalg.norm(f))
     return f
 
 

@@ -96,8 +96,24 @@ def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
 #         f = f + func(x, C, d, meanPost, covPost, C1=C1)
 #
 #     return f
+def compileTrialStackedObsAndLatent(data, idx_latent, trial_list, T, xDim, K0, K1):
+    x = np.zeros((T, xDim))
+    mean_post = np.zeros((T, K0 + K1))
+    cov_post = np.zeros((T, K1 + K0, K1 + K0))
+    t0 = 0
+    for tr in trial_list:
+        T_tr = data.trialDur[tr]
+        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
+        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
+        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:], (0, 2, 1))
+        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
+        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
+        t0 += T_tr
+    return x, mean_post, cov_post
 
-def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False, trial_list=None, test=False):
+def multiTrial_PoissonLL(W0, W1, d, data, idx_latent, trial_num=None, isGrad=False, trial_list=None, test=False):
     """
 
     :param isGrad: True return the gradient, False returns the funcion evaluation
@@ -125,21 +141,7 @@ def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False
     for tr in trial_list:
         T += data.trialDur[tr] #np.sum(list(data.trialDur.values()))
 
-    x = np.zeros((T, xDim))
-    mean_post = np.zeros((T, K0+K1))
-    cov_post = np.zeros((T, K1+K0, K1+K0))
-    t0 = 0
-    for tr in trial_list:
-
-        T_tr = data.trialDur[tr]
-        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
-        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
-        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
-        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
-        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:],(0,2,1))
-        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
-        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
-        t0 += T_tr
+    x, mean_post, cov_post = compileTrialStackedObsAndLatent(data, idx_latent, trial_list, T, xDim, K0, K1)
 
     f = func(x, W0, d, mean_post, cov_post, C1=W1)/trial_num
     if test:

@@ -70,13 +70,13 @@ def logLike_Gauss(x1,W1,d1,Rinv,mean_post,cov_post):
         logDet = np.log(Rinv).sum()
         Rinv = np.diag(Rinv)
     else:
-        logDet = np.log(np.linalg.eigh(Rinv)[0]).sum()
+        logDet = np.log(np.abs(np.linalg.eigh(Rinv)[0])).sum()
     Ezz = cov_post.sum(axis=0) + np.einsum('tj,tk->jk',mean_post,mean_post)
     term0 = -0.5*np.einsum('ti,ij,tj',x1,Rinv,x1)
     term1 = np.einsum('tj,jk,km,tm', x1, Rinv, W1, mean_post)#np.einsum('tj,jk,km,tm',x1,Rinv,W1,mean_post)
-    term2 = np.einsum('tj,jk,k->t', x1.sum(axis=0), Rinv, d1)#np.einsum('tj,jk,k->t', x1, Rinv, d1).sum()
+    term2 = np.einsum('j,jk,k->', x1.sum(axis=0), Rinv, d1)#np.einsum('tj,jk,k->t', x1, Rinv, d1).sum()
     term3 = -0.5 * np.trace(np.einsum('ij,jk,kl,lh->ih',W1.T,Rinv,W1,Ezz))#-0.5 * np.trace(np.einsum('ij,jk,kl,lt->it',W1.T,Rinv,W1,Ezz))
-    term4 = - np.einsum('j,jk,kw,tw->t', d1, Rinv, W1, mean_post.sum(axis=0))#-np.einsum('j,jk,kw,tw->t',d1,Rinv,W1,mean_post).sum()
+    term4 = - np.einsum('j,jk,kw,w->', d1, Rinv, W1, mean_post.sum(axis=0))#-np.einsum('j,jk,kw,tw->t',d1,Rinv,W1,mean_post).sum()
     term5 = -0.5 * mean_post.shape[0] * np.einsum('j,jk,k', d1, Rinv, d1)#-0.5 * mean_post.shape[0] * np.einsum('j,jk,k',d1,Rinv,d1)
     term6 = 0.5 * logDet * mean_post.shape[0]
     loss = term0 + term1 + term2 + term3 + term4 + term5 + term6
@@ -232,6 +232,17 @@ def updateGauss(data, T, sX, mu, xxT, xMu, Ezz):
     data.stimPar['d'] = d
     data.stimPar['PsiInv'] = np.linalg.inv(R)
     return
+def compileTrialStackedObsAndLatent_gauss(data, trial_list, T, yDim, K0):
+    x1 = np.zeros((T, yDim))
+    mean_post = np.zeros((T, K0))
+    cov_post = np.zeros((T, K0, K0))
+    t0 = 0
+    for tr in trial_list:
+        x1[t0:t0 + data.trialDur[tr]] = data.get_observations(tr)[0]
+        mean_post[t0:t0 + data.trialDur[tr], :] = data.posterior_inf[tr].mean[0].T
+        cov_post[t0:t0 + data.trialDur[tr]] = data.posterior_inf[tr].cov_t[0]
+        t0 += data.trialDur[tr]
+    return x1,mean_post,cov_post
 
 def full_GaussLL(data):
     # T, sX, mu, _, xMu, Ezz = learn_GaussianParams(data, test=False, isMPI=True)
@@ -240,15 +251,16 @@ def full_GaussLL(data):
     d1 = data.stimPar['d']
     Rinv = data.stimPar['PsiInv']
     N,K = W1.shape
-    x1 = np.zeros((T,N))
-    mean_post = np.zeros((T,K))
-    cov_post = np.zeros((T, K, K))
-    t0 = 0
-    for tr in data.trialDur.keys():
-        x1[t0:t0+data.trialDur[tr]] = data.get_observations(tr)[0]
-        mean_post[t0:t0+data.trialDur[tr],:] = data.posterior_inf[tr].mean[0].T
-        cov_post[t0:t0 + data.trialDur[tr]] = data.posterior_inf[tr].cov_t[0]
-        t0 += data.trialDur[tr]
+    x1, mean_post, cov_post = compileTrialStackedObsAndLatent_gauss(data,list(data.trialDur.keys()), T, N, K)
+    # x1 = np.zeros((T,N))
+    # mean_post = np.zeros((T,K))
+    # cov_post = np.zeros((T, K, K))
+    # t0 = 0
+    # for tr in data.trialDur.keys():
+    #     x1[t0:t0+data.trialDur[tr]] = data.get_observations(tr)[0]
+    #     mean_post[t0:t0+data.trialDur[tr],:] = data.posterior_inf[tr].mean[0].T
+    #     cov_post[t0:t0 + data.trialDur[tr]] = data.posterior_inf[tr].cov_t[0]
+    #     t0 += data.trialDur[tr]
     logDet = np.log(np.linalg.eigh(Rinv)[0]).sum()
     Ezz = cov_post.sum(axis=0) + np.einsum('tj,tk->jk', mean_post, mean_post)
     term0 = -0.5 * np.einsum('ti,ij,tj', x1, Rinv, x1)

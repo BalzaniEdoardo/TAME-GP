@@ -72,6 +72,9 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
         K_big[ii:ii+T.shape[0], ii:ii+T.shape[0]] = K[xd]
 
         if computeInv:
+            # eig = np.linalg.eigh(K[xd])[0]
+            # if any(np.isnan(eig)):
+            #     xxx=1
             Kinv = np.linalg.inv(K[xd])
             logdet_K = logDetCompute(K[xd])
             K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv

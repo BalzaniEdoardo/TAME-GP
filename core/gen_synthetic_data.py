@@ -43,7 +43,7 @@ class dataGen(object):
         A = np.dot(A,A.T)
         _,U = np.linalg.eig(A)
 
-        Psi = np.dot(np.dot(U.T,np.diag(R)),U)
+        Psi = np.diag(R)
 
         # create a fake data
         preproc = emptyStruct()

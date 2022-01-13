@@ -9,14 +9,15 @@ import matlab
 import matlab.engine as eng
 import numpy as np
 import os
+from time import perf_counter
 
 
 class badsOptim(object):
     def __init__(self,dat):
         print('preparing for bads optim')
         self.eng = eng.start_matlab()
-        self.eng.addpath(self.eng.genpath('../../bads'))
-        self.eng.addpath(os.path.join(os.path.abspath(os.curdir), 'badsCompatible_objectives'))
+        # self.eng.addpath(self.eng.genpath('../../bads'))
+        # self.eng.addpath(os.path.join(os.path.abspath(os.curdir), 'badsCompatible_objectives'))
         self.x = []
         for kk in range(len(dat.zdims)-1):
             self.x += [[]]
@@ -73,5 +74,8 @@ class badsOptim(object):
             mean = np.hstack((dat.posterior_inf[tr].mean[0].T, dat.posterior_inf[tr].mean[i_xVar+1].T))
             cov_post.append(matlab.double(cov.tolist()))
             mean_post.append(matlab.double(mean.tolist()))
+        t0 = perf_counter()
         C,C1,d,f = self.eng.bads_fitPoisson(W0,W1,d,self.x,mean_post,cov_post,matlab.int32([i_xVar+1]),nargout=4)
+        t1 = perf_counter()
+        print('bads optim in %f sec'%(t1-t0))
         return np.array(C),np.array(C1),np.array(d).flatten(),f

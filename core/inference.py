@@ -282,7 +282,7 @@ def inferTrial(data, trNum, zbar=None):
 
     return zbar, laplAppCov
 
-def multiTrialInference(data, plot_trial=False):
+def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False):
     """
     Laplace inference for all trials and store the result in the data structure.
     :param data: CCA_input_data
@@ -292,8 +292,12 @@ def multiTrialInference(data, plot_trial=False):
     """
     if 'posterior_inf' not in data.__dict__.keys():
         data.posterior_inf = {}
-
-    for tr in data.trialDur.keys():
+    if return_list_post:
+        list_mean_post = []
+        list_cov_post = []
+    if trial_list is None:
+        trial_list = list(data.trialDur.keys())
+    for tr in trial_list:
         if plot_trial:
             print('infer trial: %d/%d'%(tr,len(data.trialDur.keys())))
         if tr not in data.posterior_inf.keys():
@@ -309,7 +313,9 @@ def multiTrialInference(data, plot_trial=False):
         # set all the attributes related to trial as dictionaries
         T = data.trialDur[tr]
         meanPost, covPost = inferTrial(data, tr, zbar=zbar)
-
+        if return_list_post:
+            list_mean_post.append(meanPost)
+            list_cov_post.append(covPost)
         # retrive the K x T x T submarix of the posterior cov and the K x T mean for all the latent variables
         # this will be used for the GP proir time constant learning
         mean_k, cov_ii_k = parse_fullCov_latDim(data, meanPost, covPost, T)
@@ -324,6 +330,8 @@ def multiTrialInference(data, plot_trial=False):
         data.posterior_inf[tr].cov_t = cov_ii_t
         data.posterior_inf[tr].cross_cov_t = cov_0i_t
         data.posterior_inf[tr].cov_k = cov_ii_k
+    if return_list_post:
+        return list_mean_post,list_cov_post
     return
 
 

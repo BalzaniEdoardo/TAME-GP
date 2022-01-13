@@ -1,4 +1,5 @@
 *.mat
+firefly_utils/*
 *.npy
 *.npz
 *.jpg

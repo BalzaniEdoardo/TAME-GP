@@ -8,13 +8,11 @@ from inference import (makeK_big,GPLogLike,grad_GPLogLike,hess_GPLogLike,
 import unittest
 from data_processing_tools import approx_grad
 
-np.random.seed(4)
-
-
 
 class TestLogLikelihood(unittest.TestCase):
     def setUp(self):
         super(TestLogLikelihood,self).__init__()
+        np.random.seed(4)
         self.eps = 10**-7
         self.D = 4
         self.K = 5

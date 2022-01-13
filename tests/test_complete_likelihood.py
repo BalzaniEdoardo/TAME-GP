@@ -10,6 +10,7 @@ from data_processing_tools import emptyStruct
 
 class TestLogLikelihood(unittest.TestCase):
     def setUp(self):
+        np.random.seed(4)
         self.eps = 10 ** -7
         np.random.seed(4)
         # set up synthetic data
@@ -65,16 +66,13 @@ class TestLogLikelihood(unittest.TestCase):
         mu = np.ones(M.shape[0])
         MMOrig = block_diag(*([np.block([[np.ones((5,5)), np.ones((5,2))*2],
                                          [np.ones((2,5))*2,np.ones((2,2))*3]])]*50))
-        _,t_M = retrive_t_blocks_fom_cov(struc, 0, 1, [mu],[M])#data, trNum, i_Latent, meanPost, covPost
+        _,t_M = retrive_t_blocks_fom_cov(struc, 0, 1, [mu],[M])
         MM = block_diag(*t_M)
         self.assertEqual(np.abs(MM-MMOrig).sum(),0)
 
     def test_gradLogLike(self):
         stim, xList = self.struc.get_observations(0)
         zstack = np.hstack((self.z0.flatten(), self.z1.flatten()))
-
-        # res = PpCCA_logLike(zstack, stim, xList, priorPar=self.struc.priorPar, stimPar=self.struc.stimPar, xPar=self.struc.xPar,
-        #                     binSize=self.struc.binSize, epsNoise=0.0001)
 
         grad_res = grad_PpCCA_logLike(zstack, stim, xList, priorPar=self.struc.priorPar, stimPar=self.struc.stimPar,
                                       xPar=self.struc.xPar,

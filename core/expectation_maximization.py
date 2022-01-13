@@ -5,8 +5,11 @@ from learnPoissonParam import all_trial_PoissonLL
 from learnGPParams import all_trial_GPLL
 from copy import deepcopy
 from scipy.optimize import minimize
-import sys
-sys.path.append('../bads_optim')
+import sys,os
+import inspect
+basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+print(basedir)
+sys.path.append(os.path.join(basedir,'bads_optim'))
 from badsOptim import badsOptim
 
 def computeLL(data):
@@ -124,7 +127,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
 
 
 
-            # learn GP param
+        # learn GP param
         for k in range(len(data.zdims)):
             tau = data.priorPar[k]['tau']
             if use_badsGP:
@@ -166,37 +169,52 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
 
 if __name__ == '__main__':
     from gen_synthetic_data import dataGen
-    use_badsGP = True
-    use_badsPoisson = True
-    K0=1
-    K2=2
-    K3=3
-    trNum = 3
-    emIter = 4
-    dat = dataGen(trNum=trNum, T=50, D=2, N=3,N1=20, K0=K0, K2=K2, K3=K3)
+    # use_badsGP = True
+    # use_badsPoisson = True
+    # K0=1
+    # K2=2
+    # K3=3
+    # trNum = 3
+    # emIter = 4
+    # dat = dataGen(trNum=trNum, T=50, D=2, N=3,N1=20, K0=K0, K2=K2, K3=K3)
+    #
+    # # cca_input1 = deepcopy(dat.cca_input)
+    # cca_input2 = deepcopy(dat.cca_input)
+    # cca_input2.initializeParam([K0,K2,K3], use_poissonPCA=True)
+    #
+    #
+    # # multiTrialInference(cca_input1, plot_trial=True)
+    # # LL = computeLL(cca_input1)[0]
+    #
+    # # multiTrialInference(cca_input2, plot_trial=True)
+    #
+    # # print(computeLL(cca_input1))
+    # print(computeLL(cca_input2))
+    # # print('MAX LL: ',LL)
+    # ll = expectation_mazimization(cca_input2,maxIter=emIter,use_badsGP=use_badsGP,use_badsPoisson=use_badsPoisson)
+    # if use_badsGP and use_badsPoisson:
+    #     np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSGP_BADSPoisson_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
+    # elif use_badsGP:
+    #     np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSGP_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
+    # elif use_badsPoisson:
+    #     np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSPoisson_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
+    # else:
+    #     np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/L_BFGS_B_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
+    #
+    #
+    dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/L_BFGS_B_em4iter_sim_150Trials.npz',allow_pickle=True)['dat'].all()
+    dat.genNewData(10, 50)
 
-    # cca_input1 = deepcopy(dat.cca_input)
-    cca_input2 = deepcopy(dat.cca_input)
-    cca_input2.initializeParam([K0,K2,K3], use_poissonPCA=True)
-
-
-    # multiTrialInference(cca_input1, plot_trial=True)
-    # LL = computeLL(cca_input1)[0]
-
-    # multiTrialInference(cca_input2, plot_trial=True)
-
-    # print(computeLL(cca_input1))
-    print(computeLL(cca_input2))
-    # print('MAX LL: ',LL)
-    ll = expectation_mazimization(cca_input2,maxIter=emIter,use_badsGP=use_badsGP,use_badsPoisson=use_badsPoisson)
-    if use_badsGP and use_badsPoisson:
-        np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSGP_BADSPoisson_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
-    elif use_badsGP:
-        np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSGP_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
-    elif use_badsPoisson:
-        np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/BADSPoisson_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
-    else:
-        np.savez('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/L_BFGS_B_em%diter_sim_150Trials.npz'%emIter,dat=cca_input2)
-
-
-
+    subStruc = dat.subSampleTrial(dat.new_trial_list)
+    multiTrialInference(subStruc, trial_list=dat.new_trial_list, plot_trial=True)
+    dat_true = deepcopy(subStruc)
+    dat_true.xPar = subStruc.ground_truth_xPar
+    dat_true.stimPar = subStruc.ground_truth_stimPar
+    dat_true.priorPar = subStruc.ground_truth_priorPar
+    Psi = np.linalg.inv(subStruc.ground_truth_stimPar['PsiInv'])
+    ee = np.linalg.eigh(Psi)[0]
+    dat_true.stimPar['PsiInv'] = np.diag(1/np.sqrt(ee))
+    multiTrialInference(dat_true, trial_list=dat.new_trial_list, plot_trial=True)
+    print('fit par')
+    print(computeLL(subStruc)[0]-computeLL(dat_true)[0])
+    print('true par')

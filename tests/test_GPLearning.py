@@ -15,8 +15,11 @@ from data_processing_tools import parse_fullCov_latDim,approx_grad,emptyStruct
 class TestGPLearning(unittest.TestCase):
     def setUp(self):
         super(TestGPLearning,self).__init__()
-        if os.path.exists('../inference_syntetic_data/sim_150Trials.npy'):
-            dat = np.load('../inference_syntetic_data/sim_150Trials.npy',allow_pickle=True).all()
+        np.random.seed(4)
+        basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+        pathFile = os.path.join(basedir,'inference_syntetic_data','sim_150Trials.npy')
+        if pathFile:
+            dat = np.load(pathFile,allow_pickle=True).all()
         else:
             dat = dataGen(150, T=50)
         lam_0 = 2 * np.log(
