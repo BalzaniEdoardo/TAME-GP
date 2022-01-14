@@ -6,7 +6,7 @@ import numpy as np
 from data_processing_tools import emptyStruct
 from copy import deepcopy
 
-class P_GPCCA(object):#P_GPCCA
+class P_GPCCA(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001):
         """
         :param preProc: structure with attributes:
@@ -220,6 +220,12 @@ class P_GPCCA(object):#P_GPCCA
         return subStruct
 
     def genNewData(self, trNum, T):
+        """
+        Sample trNum new trials of duration T using model parameters
+        :param trNum:
+        :param T:
+        :return:
+        """
         from data_processing_tools import makeK_big
         if 'ground_truth_xPar' not in self.__dict__.keys():
             print('No ground truth parameters available!')
@@ -268,15 +274,12 @@ class P_GPCCA(object):#P_GPCCA
 
 if __name__ == '__main__':
     from inference import makeK_big
-    from scipy.linalg import block_diag
-    import seaborn as sbn
     preproc = emptyStruct()
     preproc.numTrials = 10
     preproc.ydim = 50
     preproc.binSize = 50
 
     preproc.T = np.array([100]*preproc.numTrials)
-
 
     preproc.covariates = {}
     preproc.covariates['var1'] = []

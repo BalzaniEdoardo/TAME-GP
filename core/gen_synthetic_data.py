@@ -78,7 +78,6 @@ class dataGen(object):
 
         ## infer trials
 
-
         trueStimPar = {'W0': W1, 'd': d1, 'PsiInv': np.linalg.inv(Psi)}
 
 
@@ -121,10 +120,7 @@ if __name__ == '__main__':
     from data_processing_tools import retrive_t_blocks_fom_cov
     import matplotlib.pylab as plt
     from time import perf_counter
-    t0 = perf_counter()
     data = dataGen(150,T=50)
-    t1 = perf_counter()
-    print(t1-t0)
     i_latent = 2
     tr = 0
     mean_t,cov_t = retrive_t_blocks_fom_cov(data.cca_input,tr, i_latent,data.meanPost,data.covPost)
