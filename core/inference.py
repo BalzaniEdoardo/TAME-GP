@@ -9,6 +9,9 @@ from scipy.optimize import minimize
 from scipy.linalg import block_diag, lapack
 import scipy.sparse as sparse
 from data_processing_tools import *
+import scipy.sparse as sparse
+from numba import jit
+import csr
 
 def GPLogLike(z, Kinv):
     """
@@ -74,7 +77,7 @@ def grad_gaussObsLogLike(s, z, C, d, PsiInv):
     return normLL.flatten()
 
 
-def hess_gaussObsLogLike(s, z, C, d, PsiInv):
+def hess_gaussObsLogLike(s, z, C, d, PsiInv,return_blocks=False):
     """
     Hessian of the gaussian observartions
     :param z:
@@ -84,7 +87,11 @@ def hess_gaussObsLogLike(s, z, C, d, PsiInv):
     """
     CTPsiInv = np.dot(C.T, PsiInv)
     CPsiInvC = np.dot(CTPsiInv, C)
-    M = block_diag(*[CPsiInvC]*z.shape[0])
+    if return_blocks:
+        M = np.zeros((z.shape[0],z.shape[1],z.shape[1]))
+        M[:] = CPsiInvC
+    else:
+        M = block_diag(*[CPsiInvC] * z.shape[0])
     return -M
 
 def poissonLogLike(x, z0, z1, W0, W1, d):
@@ -112,7 +119,7 @@ def grad_poissonLogLike(x, z0, z1, W0, W1, d):
     return poissLL_z0,poissLL_z1
 
 
-def hess_poissonLogLike(x, z0, z1, W0, W1, d):
+def hess_poissonLogLike(x, z0, z1, W0, W1, d, return_blocks=False):
     """
     compute the hessian for the poisson Log-likelihood
     :param x:
@@ -134,6 +141,8 @@ def hess_poissonLogLike(x, z0, z1, W0, W1, d):
         precision_z0[t] = precision_z0[t] + np.dot(W0.T * EXP[t], W0)
         precision_z1[t] = precision_z1[t] + np.dot(W1.T * EXP[t], W1)
         precision_z0z1[t] = precision_z0z1[t] + np.dot(W0.T * EXP[t], W1)
+    if return_blocks:
+        return -precision_z0, -precision_z1, -precision_z0z1
     return block_diag(*(-precision_z0)),block_diag(*(-precision_z1)),block_diag(*(-precision_z0z1))
 
 
@@ -334,11 +343,242 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         return list_mean_post,list_cov_post
     return
 
+def factorized_logLike(dat, trNum, stim, xList, zbar=None,idx_sort=None,rev_idx_sort=None):
+    # extract latent init if zbar not given
+    T = dat.trialDur[trNum]
+    sumK = np.sum(dat.zdims)
+    if (zbar is None) and ('posterior_inf' not in dat.__dict__.keys()):
+        zbar = np.zeros(T * sumK)
+    elif zbar is None:
+        zbar = np.zeros(T * sumK)
+        # start orderig it [K0*T, K1 *T, ... ]
+        i0 = 0
+        for j in range(len(dat.zdims)):
+            mn = dat.posterior_inf[trNum].mean[j].T  # T x K
+            zbar[i0: i0 + dat.zdims[j] * T] = mn.flatten()
+            i0 += dat.zdims[j] * T
+    # else:
+    #     if idx_sort is None:
+    #         rev_idx_sort = rev_sortGradient_idx(T,dat.zdims)
+    #     zbar = zbar[rev_idx_sort]
+
+    stimPar = dat.stimPar
+    xPar = dat.xPar
+
+    # stim, xList = dat.get_observations(trNum)
+
+    # extract dim z0, stim and trial time
+    K0 = stimPar['W0'].shape[1]
+    T, stimDim = stim.shape
+
+    # extract z0 and its params
+    z0 = zbar[:T*K0].reshape(T, K0)
+
+    # compute log likelihood for the stimulus and the GP
+    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+
+    i0 = K0*T
+    for k in range(len(xList)):
+        N, K = xPar[k]['W1'].shape
+        counts = xList[k].reshape(T, N)
+        z = zbar[i0: i0+T*K].reshape(T, K)
+
+        logLike += poissonLogLike(counts, z0, z, xPar[k]['W0'], xPar[k]['W1'], xPar[k]['d'])
+        i0 += K*T
+    return logLike
+
+
+
+def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
+                            rev_idx_sort=None,useGauss=1,usePoiss=1):
+
+    vec_time = []
+    vec_latent = []
+    T = dat.trialDur[trNum]
+    sumK = np.sum(dat.zdims)
+
+    # initialize zbar if none
+    if (zbar is None) and ('posterior_inf' not in dat.__dict__.keys()):
+        zbar = np.zeros(T * sumK)
+    elif zbar is None:
+        zbar = np.zeros(T * sumK)
+        # start orderig it [K0*T, K1 *T, ... ]
+        i0 = 0
+        for j in range(len(dat.zdims)):
+            mn = dat.posterior_inf[trNum].mean[j]  # K x T
+            zbar[i0: i0 + dat.zdims[j] * T] = mn.flatten()  # here you have stacked [z_{0,1:T},z_{1,1:T}, ...]
+            i0 += dat.zdims[j] * T
+    else:
+        if rev_idx_sort is None:
+            rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=True)
+        zbar = zbar[rev_idx_sort]
+
+    # retrive stim par
+    C = dat.stimPar['W0']
+    d = dat.stimPar['d']
+    PsiInv = dat.stimPar['PsiInv']
+    _, K0 = C.shape
+
+
+    # extract grad z0
+    grad_factorized = np.zeros(T*sumK)
+    grad_z0 = useGauss * grad_gaussObsLogLike(stim,zbar[:T*K0].reshape(T,K0), C, d, PsiInv)
+    grad_factorized[:K0*T] = grad_z0.flatten()#.reshape(T,K0).T.flatten()
+    vec_time = np.hstack([vec_time, np.repeat(np.arange(T),K0)])
+    vec_latent = np.hstack([vec_latent, np.repeat(np.ones(K0)*0,T)])
+    i0 = K0*T
+    for j in range(len(xList)):
+        x = xList[j]
+        W0 = dat.xPar[j]['W0']
+        W1 = dat.xPar[j]['W1']
+        d1 = dat.xPar[j]['d']
+        K = W1.shape[1]
+        z0 = zbar[:T*K0].reshape(T, K0)
+        zj = zbar[i0: i0+K*T].reshape(T, K)
+        tmp_z0, grad_z1 = grad_poissonLogLike(x,z0,zj,W0,W1,d1)
+        vec_time = np.hstack([vec_time, np.repeat(np.arange(T), K)])
+        vec_latent = np.hstack([vec_latent, np.repeat(np.ones(K) * (j+1), T)])
+
+        grad_factorized[:K0*T] = grad_factorized[:K0*T] + usePoiss * tmp_z0.flatten()#.T.flatten()
+        grad_factorized[i0: i0+K*T] = usePoiss * grad_z1.flatten()#.T.flatten()
+
+        i0 += K * T
+
+    if idx_sort is None:
+        idx_sort = sortGradient_idx(T, dat.zdims, isReverse=False)
+        # idx_sort = np.arange(T*sumK,dtype=int)
+    return grad_factorized[idx_sort],vec_time
+
+
+def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
+                            rev_idx_sort=None,
+                            indices=None, indptr=None, inverse=False):
+    # retrive data
+    T = dat.trialDur[trNum]
+    sumK = np.sum(dat.zdims)
+
+    # initialize zbar if none
+    if (zbar is None) and ('posterior_inf' not in dat.__dict__.keys()):
+        zbar = np.zeros(T * sumK)
+    elif zbar is None:
+        zbar = np.zeros(T * sumK)
+        # start orderig it [K0*T, K1 *T, ... ]
+        i0 = 0
+        for j in range(len(dat.zdims)):
+            mn = dat.posterior_inf[trNum].mean[j]  # K x T
+            zbar[i0: i0 + dat.zdims[j] * T] = mn.flatten()  # here you have stacked [z_{0,1:T},z_{1,1:T}, ...]
+            i0 += dat.zdims[j] * T
+    else:
+        if rev_idx_sort is None:
+            rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=True)
+        zbar = zbar[rev_idx_sort]
+
+
+    # retrive stim par
+    C = dat.stimPar['W0']
+    d = dat.stimPar['d']
+    PsiInv = dat.stimPar['PsiInv']
+    _, K0 = C.shape
+
+    # extract grad z0
+    z0 = zbar[:T * K0].reshape(T, K0)
+
+    # compute log likelihood for the stimulus
+    hess_logLike2 = np.zeros([T, sumK, sumK], dtype=float)
+    hess_logLike2[:, :K0, :K0] = hess_gaussObsLogLike(stim, z0, C, d, PsiInv,return_blocks=True)
+    i0 = K0 * T
+    ii0 = K0
+    for k in range(len(xList)):
+        N, K = dat.xPar[k]['W1'].shape
+        counts = xList[k].reshape(T, N)
+        z = zbar[i0: i0 + T * K].reshape(T, K)
+        hess_z0, hess_z1, hess_z0z1 = hess_poissonLogLike(counts, z0, z, dat.xPar[k]['W0'], dat.xPar[k]['W1'],
+                                                          dat.xPar[k]['d'],return_blocks=True)
+        hess_logLike2[:, :K0, :K0] = hess_logLike2[:, :K0, :K0] + hess_z0
+        hess_logLike2[:, ii0:ii0+K, ii0:ii0+K] = hess_z1
+        hess_logLike2[:, :K0, ii0:ii0 + K] = hess_z0z1
+        hess_logLike2[:, ii0:ii0+K, :K0] = np.transpose(hess_z0z1,(0,2,1))
+
+        i0 += K * T
+        ii0 += K
+
+    if idx_sort is None:
+        idx_sort = sortGradient_idx(T, dat.zdims, isReverse=False)
+
+    # create template for csr (use full blocks in case the inverse is computed)
+    if indptr is None:
+        mn = hess_logLike2.min()
+        # make sure there are no unwanted zeros
+        hess_logLike2 = hess_logLike2 - mn + 1
+        spHess = sparse.block_diag(hess_logLike2, format='csr')
+        indices = spHess.indices
+        indptr = spHess.indptr
+        # revert transform
+        spHess.data = spHess.data + mn - 1
+        # numba compatible
+        spHess = csr.CSR.from_scipy(spHess)
+    else:
+        spHess = sparse.csr_matrix((hess_logLike2.flatten(), indices, indptr))
+        # numba compatible
+        spHess = csr.CSR.from_scipy(spHess)
+
+    return spHess, indices, indptr
+
+jit(nopython=True)
+def sortGradient_idx( T, zdims, isReverse=False):
+    """
+    Sort array for gradient so that the latent are first stacked togheter on a certain time point
+    :return:
+    """
+    idx_sort = np.zeros(T*np.sum(zdims),dtype=int)
+    sumK = np.sum(zdims)
+    cc = 0
+    for jj in range(len(zdims)):
+        i0 = np.sum(zdims[:jj])
+        for tt in range(T):
+            idx_sort[cc: cc+ zdims[jj]] = np.arange(sumK * tt + i0, sumK*tt + i0 + zdims[jj])
+            cc += zdims[jj]
+    if not isReverse:
+        idx_sort = np.argsort(idx_sort)
+    return idx_sort
+
+
+
 
 if __name__ == '__main__':
+
     from gen_synthetic_data import *
-    data = dataGen(10,T=50)
+    T = 50
+    data = dataGen(10,T=T)
     sub = data.cca_input.subSampleTrial(np.arange(1,4))
     multiTrialInference(sub)
+    dat = data.cca_input
+    # test factorized
+    trNum = 5
+    stim, xList = dat.get_observations(trNum)
+    func = lambda zbar: factorized_logLike(dat,trNum,stim, xList, zbar=zbar)
+    grad_func = lambda zbar: grad_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)[0]
+    hess_func = lambda zbar: hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)
 
+
+    z0 = np.random.normal(size=dat.trialDur[5]*np.sum(dat.zdims))
+    apgrad = approx_grad(z0,z0.shape[0],func,epsi=10**-5)
+    aphes = approx_grad(z0,(z0.shape[0],)*2,grad_func,10**-5)
+    grd = grad_func(z0)
+    hes,spHess,spHess2 = hess_func(z0)
+    vt = grad_factorized_logLike(dat, trNum, stim, xList, zbar=z0)[1]
+    # lt = grad_factorized_logLike(dat, trNum, stim, xList, zbar=z0)[1]
+    t0 = perf_counter()
+    idx_sort = sortGradient_idx(T, dat.zdims)
+    t1 = perf_counter()
+    print(t1-t0)
+
+    MM = np.zeros((np.sum(dat.zdims),)*2)
+    cc = 0
+    for k in dat.zdims:
+        MM[cc:cc+k,cc:cc+k] = 1
+        cc += k
+    MM[:dat.zdims[0],:] = 1
+    MM[:, :dat.zdims[0]] = 1
+    M = sparse.block_diag([MM]*T)
 
