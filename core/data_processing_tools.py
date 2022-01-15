@@ -1,10 +1,19 @@
 import numpy as np
 from scipy.linalg import block_diag
 from copy import deepcopy
+from numba import jit
 
 class emptyStruct(object):
     def __init__(self):
         return
+
+@jit(nopython=True)
+def block_inv(A):
+    Binv = np.zeros((A.shape),dtype=np.float64)
+    for t in range(A.shape[0]):
+        Binv[t] = np.linalg.inv(A[t])
+    return Binv
+
 
 def invertHessBlock(B, zdim, T):
     """

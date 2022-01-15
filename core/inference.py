@@ -12,6 +12,7 @@ from data_processing_tools import *
 import scipy.sparse as sparse
 from numba import jit
 import csr
+from data_processing_tools import block_inv
 
 def GPLogLike(z, Kinv):
     """
@@ -451,8 +452,7 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
 
 def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
-                            rev_idx_sort=None,
-                            indices=None, indptr=None, inverse=False):
+                            rev_idx_sort=None, indices=None, indptr=None, inverse=False):
     # retrive data
     T = dat.trialDur[trNum]
     sumK = np.sum(dat.zdims)
@@ -494,6 +494,10 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
         z = zbar[i0: i0 + T * K].reshape(T, K)
         hess_z0, hess_z1, hess_z0z1 = hess_poissonLogLike(counts, z0, z, dat.xPar[k]['W0'], dat.xPar[k]['W1'],
                                                           dat.xPar[k]['d'],return_blocks=True)
+
+        if inverse:
+            hess_z1_inv = block_inv(hess_z1)
+
         hess_logLike2[:, :K0, :K0] = hess_logLike2[:, :K0, :K0] + hess_z0
         hess_logLike2[:, ii0:ii0+K, ii0:ii0+K] = hess_z1
         hess_logLike2[:, :K0, ii0:ii0 + K] = hess_z0z1
@@ -501,9 +505,6 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
         i0 += K * T
         ii0 += K
-
-    if idx_sort is None:
-        idx_sort = sortGradient_idx(T, dat.zdims, isReverse=False)
 
     # create template for csr (use full blocks in case the inverse is computed)
     if indptr is None:
@@ -543,6 +544,39 @@ def sortGradient_idx( T, zdims, isReverse=False):
     return idx_sort
 
 
+    #     Binv = np.linalg.inv(A[t].reshape(A.shape[1],A.shape[2]))
+    #     for k in range(Binv.shape[0]):
+    #         for j in range(Binv.shape[1]):
+    #             B[t,k,j] = Binv[k,j]
+    # return B
+
+
+
+@jit(nopython=True)
+def slice(A, i0, i1, j0, j1):
+    slice = np.zeros((i1-i0, j1-j0), dtype=np.float64)
+
+    ci = 0
+    for row in range(i0,i1):
+        cj = 0
+        for col in range(j0,j1):
+            slice[ci,cj] = A[row,col]
+            cj += 1
+        ci += 1
+
+    return slice
+
+@jit(nopython=True)
+def slice3(A,i0,i1,j0,j1,t):
+    slice = np.zeros((i1 - i0, j1 - j0), dtype=np.float64)
+    ci = 0
+    for row in range(i0, i1):
+        cj = 0
+        for col in range(j0, j1):
+            slice[ci, cj] = A[t, row, col]
+            cj += 1
+        ci += 1
+    return slice
 
 
 if __name__ == '__main__':
@@ -581,4 +615,49 @@ if __name__ == '__main__':
     MM[:dat.zdims[0],:] = 1
     MM[:, :dat.zdims[0]] = 1
     M = sparse.block_diag([MM]*T)
+
+
+    # t0 = perf_counter()
+    # hes, indices, indptr = hess_factorized_logLike(dat,trNum,stim,xList,zbar=z0,indices=None,indptr=None)
+    # t1 = perf_counter()
+    # print('first trial', t1 - t0)
+    #
+    # tt0 = perf_counter()
+    # hes, indices, indptr = hess_factorized_logLike(dat, trNum, stim, xList, zbar=z0, indices=indices, indptr=indptr)
+    # tt1 = perf_counter()
+    # print('passed indices', tt1-tt0)
+
+
+    A = np.random.normal(size=(300,300))
+
+    tt0 = perf_counter()
+    B = slice(A,10,200,39,298)
+    tt1 = perf_counter()
+    print(tt1-tt0)
+    tt0 = perf_counter()
+    B = slice(A, 10, 200, 39, 298)
+    tt1 = perf_counter()
+    print(tt1 - tt0)
+
+    tt0 = perf_counter()
+    BB = A[10:200,39:298]
+    tt1 = perf_counter()
+    print(tt1 - tt0)
+
+    ABig = np.random.normal(size=(100*3,100*3))
+    ABig = np.dot(ABig, ABig.T)
+
+    t0 = perf_counter()
+    np.linalg.inv(ABig)
+    t1 = perf_counter()
+    print('srandard inv', t1-t0)
+    AA = np.random.normal(size=(50,3,3))
+    for kk in range(AA.shape[0]):
+        AA[kk] = np.dot(AA[kk],AA[kk].T)
+    t0 = perf_counter()
+    block_inv(AA)
+    t1 = perf_counter()
+    print('numba inv', t1 - t0)
+
+
 
