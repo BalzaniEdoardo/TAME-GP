@@ -8,7 +8,7 @@ import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
 from time import perf_counter
-from data_processing_tools import block_inv
+from data_processing_tools import block_inv, approx_grad
 from data_preprocessing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel
 import scipy.sparse as sparse
 from numba import jit
@@ -395,10 +395,11 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
 if __name__ == '__main__':
 
     from gen_synthetic_data import *
+    from copy import deepcopy
+    from data_preprocessing_tools_factorized import fast_stackCSRHes
     T = 50
     data = dataGen(50,T=T)
     sub = data.cca_input.subSampleTrial(np.arange(1,4))
-    multiTrialInference(sub)
     dat = data.cca_input
     # test factorized
     trNum = 1
@@ -484,7 +485,7 @@ if __name__ == '__main__':
         timeComp_Reg[k + 1] = perf_counter() - t0
 
     post_mean = preproc_post_mean_factorizedModel(dat)
-    grad, hesInv = all_trial_inverseHess_and_grad_factorized(dat, post_mean)
+    ll, grad, hesInv = all_trial_ll_grad_hess_factorized(dat, post_mean)
 
     res = newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
                      indices=None, indptr=None,

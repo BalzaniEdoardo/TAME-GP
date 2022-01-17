@@ -58,3 +58,40 @@ def preproc_post_mean_factorizedModel(dat, returnDict=True):
         return zbar, tr_dict
     return post_mean
 
+
+def fast_stackCSRHes(spHess, newHes):
+    """
+    Fast stacking of csr matrix format hessian of different trials. Strongly uses the fact that across trials the
+    structure of the matrix is the same. The important bit is to make sure that from one trial to another there are no
+    additional zeroos in the block structure of the matrix; thi in the factorized model computation of the hessian is
+    done by adding  (min + 1) to vector of values that go into the matrix.
+    :param spHess: hessian for the log likelihood of multiple trials in csr.CSR format
+    :param newHes: hessian for the log likelihood of a new trial in csr.CSR format that we want to stack as a new
+    block-diagonal component
+    :return:
+    """
+    # update indices
+    new_indices = newHes.colinds + spHess.colinds[-1] + 1
+    new_ptr = newHes.rowptrs + spHess.rowptrs[-1]
+
+    # create the concatenated hessian
+    values = np.zeros(spHess.values.shape[0] + newHes.values.shape[0], dtype=np.float64, order='C')
+    indices = np.zeros(spHess.colinds.shape[0] + new_indices.shape[0], dtype=np.int32, order='C')
+    indptr = np.zeros(spHess.rowptrs.shape[0] + new_ptr.shape[0] - 1, dtype=np.int32, order='C')
+
+    values[:spHess.values.shape[0]] = spHess.values
+    values[spHess.values.shape[0]:] = newHes.values
+
+    indptr[:spHess.rowptrs.shape[0] - 1] = spHess.rowptrs[:-1]
+    indptr[spHess.rowptrs.shape[0] - 1:] = new_ptr
+
+    indices[:spHess.values.shape[0]] = spHess.colinds
+    indices[spHess.values.shape[0]:] = new_indices
+
+    nnz = spHess.nnz + newHes.nnz
+    nrows = spHess.nrows + newHes.nrows
+    ncols = spHess.ncols + newHes.ncols
+
+
+    return csr.CSR(nrows, ncols, nnz, indptr, indices, values)
+
