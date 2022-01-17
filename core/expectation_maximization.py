@@ -198,6 +198,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
     return LL_list
 
 if __name__ == '__main__':
+    from time import perf_counter
     from gen_synthetic_data import dataGen
     if os.path.exists('../inference_syntetic_data/L_BFGS_B_em4iter_sim_150Trials.npz'):
         dat = np.load('../inference_syntetic_data/L_BFGS_B_em4iter_sim_150Trials.npz',
@@ -221,3 +222,7 @@ if __name__ == '__main__':
     print(computeLL(subStruc)[0]-computeLL(dat_true)[0])
     print('true par')
     expectation_mazimization(dat_true,maxIter=44,boundsW0=[-3,3],boundsD=[-10,10])
+
+
+
+
