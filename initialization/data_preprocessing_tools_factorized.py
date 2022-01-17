@@ -1,4 +1,5 @@
 import numpy as np
+import csr
 
 def fast_stackCSRHes_memoryPreAllocation(vals, rowsptr, colindices, nnz, nrows, ncols, i0PTR, i0Val, newHes, sumK):
     """
