@@ -9,7 +9,8 @@ basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe()
 sys.path.append(os.path.join(basedir,'core'))
 from time import perf_counter
 from data_processing_tools import block_inv, approx_grad
-from data_preprocessing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel
+from data_processing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel,\
+    reconstruct_post_mean_and_cov
 import scipy.sparse as sparse
 from numba import jit
 import csr
@@ -30,6 +31,11 @@ def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx
             mn = dat.posterior_inf[trNum].mean[j].T  # T x K
             zbar[i0: i0 + dat.zdims[j] * T] = mn.flatten()
             i0 += dat.zdims[j] * T
+    else:
+        if rev_idx_sort is None:
+            rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=True)
+        zbar = zbar[rev_idx_sort]
+
 
     stimPar = dat.stimPar
     xPar = dat.xPar
@@ -115,7 +121,8 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
 
 def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
-                            rev_idx_sort=None, indices=None, indptr=None, inverse=False):
+                            rev_idx_sort=None, indices=None, indptr=None, inverse=False,
+                            return_tensor=False):
     # retrive data
     T = dat.trialDur[trNum]
     sumK = np.sum(dat.zdims)
@@ -179,6 +186,9 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
         ii0 += K
     if inverse:
         H = invertLoop(inverseBlocks, corssBlocks, A)
+
+    if return_tensor:
+        return H
 
     # create template for csr (use full blocks in case the inverse is computed)
     if indptr is None:
@@ -287,7 +297,7 @@ def invertBlocks(*args):
             cc += 1
     return M
 
-def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=False, returnLL=False):
+def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, returnLL=False, inverse=True):
     indices = None
     indptr = None
     idx_sort = None
@@ -302,7 +312,7 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=False, 
 
     for trNum in dat.trialDur.keys():
         stim, xList = dat.get_observations(trNum)
-        print('tr %d'%trNum)
+        # print('tr %d'%trNum)
         if isDict:
             zbar = post_mean[trNum]
         else:
@@ -310,19 +320,19 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=False, 
         LL += factorized_logLike(dat, trNum, stim, xList, zbar=zbar, idx_sort=idx_sort, rev_idx_sort=rev_idx_sort)
         if returnLL:
             continue
-        t0 = perf_counter()
+        # t0 = perf_counter()
         hesInv, indices, indptr = hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar,
-                                                          inverse=True, indices=indices, indptr=indptr)
-        tt1 = perf_counter()
+                                                          inverse=inverse, indices=indices, indptr=indptr)
+        # tt1 = perf_counter()
         grad[i0:i0 + dat.trialDur[trNum]*sumK], idx_sort, rev_idx_sort = grad_factorized_logLike(dat, trNum, stim,
                                                                                                      xList,
                                                                                                      zbar=zbar,
                                                                                                      idx_sort=idx_sort,
                                                                     rev_idx_sort=rev_idx_sort, useGauss=1, usePoiss=1)
         i0 += dat.trialDur[trNum]*sumK
-        t1 = perf_counter()
-        print('hess compute',tt1-t0)
-        print('grad compute', t1 - tt1)
+        # t1 = perf_counter()
+        # print('hess compute',tt1-t0)
+        # print('grad compute', t1 - tt1)
         if first:
             indPTRSize = (hesInv.rowptrs.shape[0] - 1) * stackNum + 1
             indValSize = (hesInv.values.shape[0]) * stackNum
@@ -349,10 +359,11 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=False, 
 
 def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
                      indices=None, indptr=None,
-                     indices_up=None, indptr_up=None, disp_ll=False):
+                     indices_up=None, indptr_up=None, disp_ll=False,init_zeros=False,
+                     useNewton=True):
     eps_float = np.finfo(float).eps
     Z0, tr_dict = preproc_post_mean_factorizedModel(dat,returnDict=False)
-
+    Z0 = (1-init_zeros)*Z0
     ii = 0
     delta_ll = np.inf
 
@@ -360,10 +371,13 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
     while ii < max_iter and delta_ll > tol:
 
         # t0 = perf_counter()
-        log_like, grad_ll, hess_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=True)
+        log_like, grad_ll, hess_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False)
         if disp_ll:
             print('newton optim iter', ii, 'log-like', log_like)
-        delt = hess_ll.mult_vec(grad_ll)
+        if useNewton:
+            delt = hess_ll.mult_vec(grad_ll)
+        else:
+            delt = -grad_ll#hess_ll.mult_vec(grad_ll)
         # print('sparse solve time', perf_counter() - t0)
         step = 1
         new_ll = -np.inf
@@ -372,23 +386,26 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
         while new_ll < log_like and step_halv < max_having:
 
             tmpZ = Z0 - step * delt.reshape(Z0.shape)
-            new_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=True, returnLL=True)
+            new_ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
             delta_ll = new_ll - log_like
-            if disp_ll:
-                print('halv step log-like', step_halv + 1, new_ll)
+            # if disp_ll:
+            #     print('halv step log-like', step_halv + 1, new_ll)
             step = step / 2
             step_halv += 1
         # print('step halving time', perf_counter() - t0)
         if new_ll == -np.inf or (log_like - new_ll > np.sqrt(eps_float)):
-            return Z0, False
+            print(log_like - new_ll)
+            ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+            return Z0, False, tr_dict, ll
         Z0 = tmpZ
-        if disp_ll:
-            print('delta_ll', delta_ll)
+        # if disp_ll:
+        #     print('delta_ll', delta_ll)
 
         ii += 1
     # only criteria for convergence used
     flag_convergence = delta_ll <= tol
-    return Z0, flag_convergence
+    ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+    return Z0, flag_convergence, tr_dict, ll
 
 
 
@@ -396,9 +413,9 @@ if __name__ == '__main__':
 
     from gen_synthetic_data import *
     from copy import deepcopy
-    from data_preprocessing_tools_factorized import fast_stackCSRHes
+    from data_processing_tools_factorized import fast_stackCSRHes
     T = 50
-    data = dataGen(50,T=T)
+    data = dataGen(400,T=T,infer=False)
     sub = data.cca_input.subSampleTrial(np.arange(1,4))
     dat = data.cca_input
     # test factorized
@@ -484,9 +501,24 @@ if __name__ == '__main__':
         hes_sci2 = sparse.block_diag([hes_sci2,hes_sci])
         timeComp_Reg[k + 1] = perf_counter() - t0
 
-    post_mean = preproc_post_mean_factorizedModel(dat)
-    ll, grad, hesInv = all_trial_ll_grad_hess_factorized(dat, post_mean)
+    post_mean,td = preproc_post_mean_factorizedModel(dat,returnDict=False)
+    # ll, grad, hesInv = all_trial_ll_grad_hess_factorized(dat, post_mean)
 
-    res = newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
+    zmap,success,td,ll = newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=20,
                      indices=None, indptr=None,
-                     indices_up=None, indptr_up=None, disp_ll=True)
+                     indices_up=None, indptr_up=None, disp_ll=True, init_zeros=True,useNewton=True)
+
+
+    func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=True)
+    grad_func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=False)[1]
+    hessian_func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=False,inverse=False)[2].to_scipy().toarray()
+
+    stim,xList = dat.get_observations(10)
+    H = -hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
+                            rev_idx_sort=None, indices=None, indptr=None, inverse=True,
+                            return_tensor=True)
+
+    # apgrad = approx_grad(post_mean*0,post_mean.shape[0],func,epsi=10**-5)
+    # gr = grad_func(post_mean*0)
+    # hes = hessian_func(post_mean*0)
+    # aphes = approx_grad(post_mean*0,(gr.shape[0],)*2, grad_func,10**-5)

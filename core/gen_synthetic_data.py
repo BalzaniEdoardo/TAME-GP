@@ -6,7 +6,7 @@ from data_processing_tools import emptyStruct
 
 class dataGen(object):
 
-    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6):
+    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, infer=True):
         super(dataGen,self).__init__()
         np.random.seed(90)
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
@@ -107,8 +107,8 @@ class dataGen(object):
         # infer trials
         self.meanPost = []
         self.covPost = []
-
-        multiTrialInference(self.cca_input)
+        if infer:
+            multiTrialInference(self.cca_input)
         # for tr in range(trNum):
         #     print('infer trial %d'%tr)
         #     meanPost, covPost = inferTrial(self.cca_input, tr)

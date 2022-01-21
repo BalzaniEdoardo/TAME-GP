@@ -1,5 +1,10 @@
 import numpy as np
 import csr
+from inference_factorized import hess_factorized_logLike
+import os,inspect,sys
+basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+sys.path.append(os.path.join(basedir,'core'))
+from data_processing_tools import emptyStruct
 
 def fast_stackCSRHes_memoryPreAllocation(vals, rowsptr, colindices, nnz, nrows, ncols, i0PTR, i0Val, newHes, sumK):
     """
@@ -48,7 +53,7 @@ def preproc_post_mean_factorizedModel(dat, returnDict=True):
                 i0 += dat.zdims[j] * T
 
     if not returnDict:
-        totDur = np.sum(list(dat.trDur.values()))
+        totDur = np.sum(list(dat.trialDur.values()))
         zbar = np.zeros(totDur * sumK, dtype=np.float32, order='C')
         tr_dict = {}
         i0 = 0
@@ -96,3 +101,38 @@ def fast_stackCSRHes(spHess, newHes):
 
     return csr.CSR(nrows, ncols, nnz, indptr, indices, values)
 
+def reconstruct_post_mean_and_cov(dat, zbar, index_dict):
+    """
+
+    :param dat: P_GPCCA inputt
+    :param zbar: the output of newton optim (which is the posterior mean for all trials)
+    :param index_dict: index of zbar for each trial
+    :return:
+    """
+    if 'posterior_inf' not in dat.__dict__.keys():
+        dat.posterior_inf = {}
+
+    for tr in index_dict.keys():
+        stim, xList = dat.get_observations(tr)
+        post_mean = zbar[index_dict[tr]]
+        post_cov = -hess_factorized_logLike(dat, tr, stim, xList, zbar=post_mean, inverse=True,
+                            return_tensor=True)
+        T = dat.trialDur[tr]
+
+        if tr not in dat.posterior_inf.keys():
+            dat.posterior_inf[tr] = emptyStruct()
+            dat.posterior_inf[tr].mean = {}
+            dat.posterior_inf[tr].cov_t = {}
+            dat.posterior_inf[tr].cross_cov_t = {}
+
+        i0 = 0
+        c0 = 0
+        for j in range(len(dat.zdims)):
+            dat.posterior_inf[tr].mean[j] = post_mean[i0: i0 + dat.zdims[j] * T].reshape(dat.zdims[j],T).T
+            dat.posterior_inf[tr].cov_t[j] = post_cov[:, c0: c0 + dat.zdims[j], c0: c0 + dat.zdims[j]]
+            if j > 0:
+                dat.posterior_inf[tr].cross_cov_t[j] = post_cov[:, :dat.zdims[0], c0: c0 + dat.zdims[j]]
+
+            i0 += dat.zdims[j] * T
+            c0 += dat.zdims[j]
+    return True
