@@ -8,14 +8,52 @@ import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
 from time import perf_counter
-from data_processing_tools import block_inv, approx_grad
-from data_processing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel,\
-    reconstruct_post_mean_and_cov
+from data_processing_tools import block_inv, approx_grad, emptyStruct
+from data_processing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel
 import scipy.sparse as sparse
 from numba import jit
 import csr
 from inference import gaussObsLogLike, poissonLogLike, grad_gaussObsLogLike, grad_poissonLogLike,\
-    hess_gaussObsLogLike, hess_poissonLogLike
+    hess_gaussObsLogLike, hess_poissonLogLike,
+
+
+def reconstruct_post_mean_and_cov(dat, zbar, index_dict):
+    """
+
+    :param dat: P_GPCCA inputt
+    :param zbar: the output of newton optim (which is the posterior mean for all trials)
+    :param index_dict: index of zbar for each trial
+    :return:
+    """
+    if 'posterior_inf' not in dat.__dict__.keys():
+        dat.posterior_inf = {}
+
+    for tr in index_dict.keys():
+        stim, xList = dat.get_observations(tr)
+        post_mean = zbar[index_dict[tr]]
+        post_cov = -hess_factorized_logLike(dat, tr, stim, xList, zbar=post_mean, inverse=True,
+                            return_tensor=True)
+        T = dat.trialDur[tr]
+        rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=True)
+        post_mean = post_mean[rev_idx_sort]
+
+        if tr not in dat.posterior_inf.keys():
+            dat.posterior_inf[tr] = emptyStruct()
+            dat.posterior_inf[tr].mean = {}
+            dat.posterior_inf[tr].cov_t = {}
+            dat.posterior_inf[tr].cross_cov_t = {}
+
+        i0 = 0
+        c0 = 0
+        for j in range(len(dat.zdims)):
+            dat.posterior_inf[tr].mean[j] = post_mean[i0: i0 + dat.zdims[j] * T].reshape(T, dat.zdims[j]).T
+            dat.posterior_inf[tr].cov_t[j] = post_cov[:, c0: c0 + dat.zdims[j], c0: c0 + dat.zdims[j]]
+            if j > 0:
+                dat.posterior_inf[tr].cross_cov_t[j] = post_cov[:, :dat.zdims[0], c0: c0 + dat.zdims[j]]
+
+            i0 += dat.zdims[j] * T
+            c0 += dat.zdims[j]
+    return True
 
 def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx_sort=None):
     # extract latent init if zbar not given
@@ -414,12 +452,15 @@ if __name__ == '__main__':
     from gen_synthetic_data import *
     from copy import deepcopy
     from data_processing_tools_factorized import fast_stackCSRHes
+    import matplotlib.pylab as plt
+    from inference import multiTrialInference
+
     T = 50
-    data = dataGen(400,T=T,infer=False)
+    data = dataGen(3,T=T,infer=False)
     sub = data.cca_input.subSampleTrial(np.arange(1,4))
     dat = data.cca_input
     # test factorized
-    trNum = 1
+    trNum = 0
     stim, xList = dat.get_observations(trNum)
     func = lambda zbar: factorized_logLike(dat,trNum,stim, xList, zbar=zbar)
     grad_func = lambda zbar: grad_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)[0]
@@ -508,15 +549,38 @@ if __name__ == '__main__':
                      indices=None, indptr=None,
                      indices_up=None, indptr_up=None, disp_ll=True, init_zeros=True,useNewton=True)
 
+    dat2 = deepcopy(dat)
+    reconstruct_post_mean_and_cov(dat2,zmap,td)
+    multiTrialInference(dat)
+    plt.figure(figsize=(10,5))
+    cc = 1
+    for k in range(2):
+        plt.subplot(2,2,k+cc)
+        plt.title('Factorized: coord %d'%(k+1))
+        std_fact = np.sqrt(dat2.posterior_inf[2].cov_t[0][:, k, k])
+        p, = plt.plot(dat2.posterior_inf[2].mean[0][k])
+        plt.fill_between(np.arange(T), dat2.posterior_inf[2].mean[0][k] - 1.96 * std_fact,
+                         dat2.posterior_inf[2].mean[0][k] + 1.96 * std_fact, alpha=0.4, color=p.get_color())
+        plt.plot(dat.ground_truth_latent[2][:,k],color='k')
+        cc+=1
 
-    func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=True)
-    grad_func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=False)[1]
-    hessian_func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=False,inverse=False)[2].to_scipy().toarray()
+        plt.subplot(2, 2, k + cc)
+        plt.title('GP: coord %d' % (k + 1))
+        std_gp = np.sqrt(dat.posterior_inf[2].cov_t[0][:, k, k])
+        p, = plt.plot(dat.posterior_inf[2].mean[0][k])
+        plt.fill_between(np.arange(T), dat.posterior_inf[2].mean[0][k] - 1.96 * std_gp,
+                         dat.posterior_inf[2].mean[0][k] + 1.96 * std_gp, alpha=0.4, color=p.get_color())
+        plt.plot(dat.ground_truth_latent[2][:, k], color='k')
+    plt.tight_layout()
 
-    stim,xList = dat.get_observations(10)
-    H = -hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
-                            rev_idx_sort=None, indices=None, indptr=None, inverse=True,
-                            return_tensor=True)
+    # func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=True)
+    # grad_func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=False)[1]
+    # hessian_func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=False,inverse=False)[2].to_scipy().toarray()
+
+    # stim,xList = dat.get_observations(10)
+    # H = -hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
+    #                         rev_idx_sort=None, indices=None, indptr=None, inverse=True,
+    #                         return_tensor=True)
 
     # apgrad = approx_grad(post_mean*0,post_mean.shape[0],func,epsi=10**-5)
     # gr = grad_func(post_mean*0)
