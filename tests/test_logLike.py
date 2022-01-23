@@ -1,6 +1,6 @@
 import numpy as np
-import os,sys,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+import os,sys
+basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(basedir,'core'))
 from inference import (makeK_big,GPLogLike,grad_GPLogLike,hess_GPLogLike,
                        gaussObsLogLike,grad_gaussObsLogLike,hess_gaussObsLogLike,

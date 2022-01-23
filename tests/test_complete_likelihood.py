@@ -1,6 +1,7 @@
 import numpy as np
-import os,sys,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+import os,sys
+basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print('base folder:', basedir)
 sys.path.append(os.path.join(basedir,'core'))
 from inference import (PpCCA_logLike,grad_PpCCA_logLike,hess_PpCCA_logLike,makeK_big,approx_grad,retrive_t_blocks_fom_cov)
 from data_structure import P_GPCCA

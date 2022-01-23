@@ -1,6 +1,6 @@
 import numpy as np
-import os,sys,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+import os,sys
+basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(basedir,'core'))
 from inference import (inferTrial,makeK_big,retrive_t_blocks_fom_cov,multiTrialInference)
 from data_structure import P_GPCCA

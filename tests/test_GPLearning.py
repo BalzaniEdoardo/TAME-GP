@@ -1,6 +1,6 @@
 import numpy as np
-import os,sys,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+import os,sys
+basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(basedir,'core'))
 
 from data_structure import *
@@ -16,50 +16,50 @@ class TestGPLearning(unittest.TestCase):
     def setUp(self):
         super(TestGPLearning,self).__init__()
         np.random.seed(4)
-        basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+        basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         pathFile = os.path.join(basedir,'inference_syntetic_data','sim_150Trials.npy')
         if pathFile:
             dat = np.load(pathFile,allow_pickle=True).all()
         else:
             dat = dataGen(150, T=50)
         lam_0 = 2 * np.log(
-            ((dat.cca_input.priorPar[1]['tau'] * dat.cca_input.binSize / 1000))
+            ((dat.priorPar[1]['tau'] * dat.binSize / 1000))
         )
-        eps = dat.cca_input.epsNoise
+        eps = dat.epsNoise
         mu_list = []
         cov_list = []
-        for k in range(len(dat.cca_input.trialDur)):
-            m, s = parse_fullCov_latDim(dat.cca_input, dat.meanPost[k], dat.covPost[k], dat.cca_input.trialDur[k])
-            mu_list.append(m[1])
-            cov_list.append(s[1])
+        for k in range(len(dat.trialDur)):
+            # m, s = parse_fullCov_latDim(dat, dat.meanPost[k], dat.covPost[k], dat.trialDur[k])
+            mu_list.append(dat.posterior_inf[k].mean[1])
+            cov_list.append(dat.posterior_inf[k].cov_k[1])
 
-        func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list, eps,
-                                                              max(dat.cca_input.trialDur), isGrad=False)
+        func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list, dat.binSize, eps,
+                                                              max(dat.trialDur), isGrad=False)
         func_grad = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0,  mu_list, cov_list,
-                                                                   dat.cca_input.binSize, eps,
-                                                                   max(dat.cca_input.trialDur) + 1, isGrad=True)
-        self.res = minimize(func, np.zeros(len(lam_0)), jac=func_grad, method='L-BFGS-B', tol=10 ** -10)
+                                                                   dat.binSize, eps,
+                                                                   max(dat.trialDur) + 1, isGrad=True)
+        self.res = minimize(func, 0.1*np.random.normal(size=len(lam_0)), jac=func_grad, method='L-BFGS-B', tol=10 ** -10)
         self.target = lam_0
         self.dat = dat
 
     def test_gradExpLLGP(self):
         dat = self.dat
-        eps = self.dat.cca_input.epsNoise
+        eps = self.dat.epsNoise
 
         mu_list = []
         cov_list = []
-        for k in range(len(dat.cca_input.trialDur)):
-            m, s = parse_fullCov_latDim(dat.cca_input, dat.meanPost[k], dat.covPost[k], dat.cca_input.trialDur[k])
-            mu_list.append(m[1])
-            cov_list.append(s[1])
+        for k in range(len(dat.trialDur)):
+            # m, s = parse_fullCov_latDim(dat.cca_input, dat.meanPost[k], dat.covPost[k], dat.cca_input.trialDur[k])
+            mu_list.append(dat.posterior_inf[k].mean[1])
+            cov_list.append(dat.posterior_inf[k].cov_k[1])
 
         func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0,  mu_list, cov_list,
-                                                              dat.cca_input.binSize, eps,
-                                                              max(dat.cca_input.trialDur), isGrad=False)
+                                                              dat.binSize, eps,
+                                                              max(dat.trialDur), isGrad=False)
         func_grad = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list,
-                                                                   dat.cca_input.binSize, eps,
-                                                                   max(dat.cca_input.trialDur) + 1, isGrad=True)
-        xDim = m[1].shape[0]
+                                                                   dat.binSize, eps,
+                                                                   max(dat.trialDur) + 1, isGrad=True)
+        xDim = dat.posterior_inf[k].mean[1].shape[0]
         x0 = np.random.uniform(-5,-3,size=xDim)
         ap_grad = approx_grad(x0, xDim, func,10**-5)
         err = np.linalg.norm(ap_grad-func_grad(x0))
