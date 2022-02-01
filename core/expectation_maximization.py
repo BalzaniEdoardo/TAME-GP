@@ -17,7 +17,7 @@ from badsOptim import badsOptim
 
 def computeLL(data):
     llgauss = full_GaussLL(data)
-    LL = full_GaussLL(data)
+    LL = deepcopy(llgauss)
     ll_poiss = []
     for k in range(len(data.zdims) - 1):
         C = data.xPar[k]['W0']
@@ -41,6 +41,7 @@ def computeLL(data):
         tmp = func(lam0)
         ll_gp.append(tmp)
         LL += tmp
+
     return LL,llgauss,ll_poiss,ll_gp
 
 

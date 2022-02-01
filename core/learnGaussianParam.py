@@ -269,7 +269,8 @@ def full_GaussLL(data):
     term3 = -0.5 * np.trace(np.einsum('ij,jk,kl,lh->ih', W1.T, Rinv, W1, Ezz))  # -0.5 * np.trace(np.einsum('ij,jk,kl,lt->it',W1.T,Rinv,W1,Ezz))
     term4 = - np.einsum('j,jk,kw,w->', d1, Rinv, W1,mean_post.sum(axis=0))  # -np.einsum('j,jk,kw,tw->t',d1,Rinv,W1,mean_post).sum()
     term5 = -0.5 * T * np.einsum('j,jk,k', d1, Rinv,d1)  # -0.5 * mean_post.shape[0] * np.einsum('j,jk,k',d1,Rinv,d1)
-    return term0 + term1 + term2 + term3 + term4 + term5
+    term6 = 0.5 * logDet * mean_post.shape[0]
+    return term0 + term1 + term2 + term3 + term4 + term5 + term6
 
 def learn_GaussianParams(data, test=False, isMPI=False):
     """

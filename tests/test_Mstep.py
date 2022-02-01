@@ -138,8 +138,12 @@ class TestMStep(unittest.TestCase):
         W = self.W1
         d = self.d1
         Psi = self.Psi
-        x1 = self.x1[0]
-        mean_t, cov_t = retrive_t_blocks_fom_cov(self.struc, 0, 0, self.meanPost_list, self.covPost_list)
+        # x1 = self.x1[0]
+        # mean_t, cov_t = retrive_t_blocks_fom_cov(self.struc, 0, 0, self.meanPost_list, self.covPost_list)
+
+        x1, mean_t, cov_t = compileTrialStackedObsAndLatent_gauss(self.struc, list(self.struc.trialDur.keys()),
+                                                                        np.sum(list(self.struc.trialDur.values())), W.shape[0], W.shape[1])
+
         Wnew, dnew, PsiNew = MStepGauss(x1, mean_t, cov_t)
 
         grad1 = grag_GaussLL_wrt_Wd(x1, Wnew,dnew,np.linalg.inv(PsiNew),mean_t,cov_t)

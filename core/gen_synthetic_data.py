@@ -6,7 +6,7 @@ from data_processing_tools import emptyStruct
 
 class dataGen(object):
 
-    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, infer=True):
+    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, infer=True, setTruePar=True):
         super(dataGen,self).__init__()
         np.random.seed(90)
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
@@ -25,15 +25,15 @@ class dataGen(object):
 
         tau3 = np.random.uniform(0.2, 1, K3)
         K_big3 = makeK_big(K3, tau3, None, binSize, epsNoise=epsNoise, T=T, computeInv=False)[1]
+        fract  = 2.5
+        W1 = np.random.normal(size=(D, K0)) / 1
 
-        W1 = np.random.normal(size=(D, K0)) #/ 0.9
+        W12 = 1 * np.random.normal(size=(N, K2)) / fract
 
-        W12 = 1 * np.random.normal(size=(N, K2)) #/ 1.8
+        W02 = np.random.normal(size=(N, K0)) / fract
+        W03 = np.random.normal(size=(N1, K0)) / fract
 
-        W02 = np.random.normal(size=(N, K0)) #/ 0.3
-        W03 = np.random.normal(size=(N1, K0)) #/ 0.3
-
-        W13 = 1 * np.random.normal(size=(N1, K3)) #/ .8
+        W13 = 1 * np.random.normal(size=(N1, K3)) / fract
 
         R = np.random.uniform(0.1, 3, size=D)
         d1 = np.random.uniform(size=(D))
@@ -92,11 +92,12 @@ class dataGen(object):
                                    np.ones(preproc.ydim, dtype=bool))
         self.cca_input.ground_truth_latent = ground_truth_latent
         self.cca_input.initializeParam([K0, K2, K3])
-        # set the parameters to the true value
-        self.cca_input.xPar = trueObsPar
-        self.cca_input.priorPar = truePriorPar
-        self.cca_input.stimPar = trueStimPar
-        self.cca_input.epsNoise = epsNoise
+        if setTruePar:
+            # set the parameters to the true value
+            self.cca_input.xPar = trueObsPar
+            self.cca_input.priorPar = truePriorPar
+            self.cca_input.stimPar = trueStimPar
+            self.cca_input.epsNoise = epsNoise
 
         self.cca_input.ground_truth_xPar = deepcopy(trueObsPar)
         self.cca_input.ground_truth_priorPar = deepcopy(truePriorPar)

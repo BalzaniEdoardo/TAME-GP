@@ -97,7 +97,7 @@ def compGrad_expectedLLGPPrior(lam_0, eps, covX, muX, binSize, T,isGrad=False):
     mumuT = np.dot(muX, muX.T)
     dif = covX + mumuT
     if not isGrad:
-        xtKinvx = np.dot(K_big_inv.flatten(), dif.flatten()) # trace(K_big_inv * covX); works since covX is sym, otherwise transpose
+        xtKinvx = np.dot(K_big_inv.flatten(), dif.flatten()) # trace(K_big_inv * E_zz); works since covX is sym, otherwise transpose
         return logDetK, xtKinvx
     else:
         # get the derivative of xT * Kinv * x in dK

@@ -9,12 +9,12 @@ basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe()
 sys.path.append(os.path.join(basedir,'core'))
 from time import perf_counter
 from data_processing_tools import block_inv, approx_grad, emptyStruct
-from data_processing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel
+from data_processing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel,invertBlocks,sortGradient_idx
 import scipy.sparse as sparse
 from numba import jit
 import csr
 from inference import gaussObsLogLike, poissonLogLike, grad_gaussObsLogLike, grad_poissonLogLike,\
-    hess_gaussObsLogLike, hess_poissonLogLike,
+    hess_gaussObsLogLike, hess_poissonLogLike
 
 
 def reconstruct_post_mean_and_cov(dat, zbar, index_dict):
@@ -85,8 +85,9 @@ def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx
     # extract z0 and its params
     z0 = zbar[:T*K0].reshape(T, K0)
 
+
     # compute log likelihood for the stimulus and the GP
-    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) - 0.5 * (zbar*zbar).sum()
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -131,7 +132,7 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
     # extract grad z0
     grad_factorized = np.zeros(T*sumK)
-    grad_z0 = useGauss * grad_gaussObsLogLike(stim,zbar[:T*K0].reshape(T,K0), C, d, PsiInv)
+    grad_z0 = useGauss * grad_gaussObsLogLike(stim,zbar[:T*K0].reshape(T,K0), C, d, PsiInv) - zbar[:T*K0]
     grad_factorized[:K0*T] = grad_z0.flatten()#.reshape(T,K0).T.flatten()
 
     i0 = K0*T
@@ -148,7 +149,7 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
         # vec_latent = np.hstack([vec_latent, np.repeat(np.ones(K) * (j+1), T)])
 
         grad_factorized[:K0*T] = grad_factorized[:K0*T] + usePoiss * tmp_z0.flatten()#.T.flatten()
-        grad_factorized[i0: i0+K*T] = usePoiss * grad_z1.flatten()#.T.flatten()
+        grad_factorized[i0: i0+K*T] = usePoiss * grad_z1.flatten() - zbar[i0: i0+K*T]#.T.flatten()
 
         i0 += K * T
 
@@ -196,11 +197,12 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
     ii0 = K0
     if not inverse:
         H = np.zeros([T, sumK, sumK], dtype=float)
-        H[:, :K0, :K0] = hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
+        H = H - np.eye(sumK)
+        H[:, :K0, :K0] = H[:, :K0, :K0] + hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
     else:
         inverseBlocks = []
         corssBlocks = []#np.zeros((K0,T*(sumK-K0)),dtype=np.float64)
-        A = hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
+        A = hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True) - np.eye(K0)
 
     for k in range(len(xList)):
         N, K = dat.xPar[k]['W1'].shape
@@ -211,11 +213,13 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
         if not inverse:
             H[:, :K0, :K0] = H[:, :K0, :K0] + hess_z0
-            H[:, ii0:ii0+K, ii0:ii0+K] = hess_z1
+
+            H[:, ii0:ii0+K, ii0:ii0+K] = H[:, ii0:ii0+K, ii0:ii0+K] + hess_z1
             H[:, :K0, ii0:ii0 + K] = hess_z0z1
             H[:, ii0:ii0+K, :K0] = np.transpose(hess_z0z1,(0,2,1))
 
         else:
+            hess_z1 = hess_z1 - np.eye(K)
             inverseBlocks.append(block_inv(hess_z1))
             corssBlocks.append(hess_z0z1)
             A = A + hess_z0
@@ -290,51 +294,6 @@ def invertLoop(Binvs,Cs,As):
     return M
 
 
-jit(nopython=True)
-def sortGradient_idx( T, zdims, isReverse=False):
-    """
-    Sort array for gradient so that the latent are first stacked togheter on a certain time point
-    :return:
-    """
-    idx_sort = np.zeros(T*np.sum(zdims),dtype=int)
-    sumK = np.sum(zdims)
-    cc = 0
-    for jj in range(len(zdims)):
-        i0 = np.sum(zdims[:jj])
-        for tt in range(T):
-            idx_sort[cc: cc+ zdims[jj]] = np.arange(sumK * tt + i0, sumK*tt + i0 + zdims[jj])
-            cc += zdims[jj]
-    if not isReverse:
-        idx_sort = np.argsort(idx_sort)
-    return idx_sort
-
-
-@jit(nopython=True)
-def invertBlocks(*args):
-    """
-    Invert a list of T x Kj x Kj blocks of a block diagonal matri
-    we want to invert
-    :param args:
-    :return:
-    """
-    Kmax = 0
-    cc = 0
-    for k in range(len(args)):
-        blocks = args[k]
-        Kmax = max(Kmax, blocks.shape[1])
-        cc += blocks.shape[0]
-
-    M = np.zeros((cc, Kmax, Kmax),dtype=np.float64)
-    cc = 0
-    for k in range(len(args)):
-        blocks = args[k]
-        K = blocks.shape[1]
-        for t in range(blocks.shape[0]):
-            B = blocks[t]
-            M[cc, :K, :K] = np.linalg.inv(B)
-            cc += 1
-    return M
-
 def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, returnLL=False, inverse=True):
     indices = None
     indptr = None
@@ -395,9 +354,8 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
 
 
 
-def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
-                     indices=None, indptr=None,
-                     indices_up=None, indptr_up=None, disp_ll=False,init_zeros=False,
+
+def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,disp_ll=False,init_zeros=False,
                      useNewton=True):
     eps_float = np.finfo(float).eps
     Z0, tr_dict = preproc_post_mean_factorizedModel(dat,returnDict=False)
@@ -406,6 +364,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
     delta_ll = np.inf
 
     tmpZ = Z0.copy()
+    ll_hist = []
     while ii < max_iter and delta_ll > tol:
 
         # t0 = perf_counter()
@@ -420,21 +379,25 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
         step = 1
         new_ll = -np.inf
         step_halv = 0
+
         # t0 = perf_counter()
         while new_ll < log_like and step_halv < max_having:
 
             tmpZ = Z0 - step * delt.reshape(Z0.shape)
             new_ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+
             delta_ll = new_ll - log_like
             # if disp_ll:
             #     print('halv step log-like', step_halv + 1, new_ll)
             step = step / 2
             step_halv += 1
+
         # print('step halving time', perf_counter() - t0)
         if new_ll == -np.inf or (log_like - new_ll > np.sqrt(eps_float)):
             print(log_like - new_ll)
             ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
             return Z0, False, tr_dict, ll
+        ll_hist.append(new_ll)
         Z0 = tmpZ
         # if disp_ll:
         #     print('delta_ll', delta_ll)
@@ -443,7 +406,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,
     # only criteria for convergence used
     flag_convergence = delta_ll <= tol
     ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
-    return Z0, flag_convergence, tr_dict, ll
+    return Z0, flag_convergence, tr_dict, ll, ll_hist
 
 
 
@@ -545,7 +508,7 @@ if __name__ == '__main__':
     post_mean,td = preproc_post_mean_factorizedModel(dat,returnDict=False)
     # ll, grad, hesInv = all_trial_ll_grad_hess_factorized(dat, post_mean)
 
-    zmap,success,td,ll = newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=20,
+    zmap,success,td,ll,ll_hist = newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=20,
                      indices=None, indptr=None,
                      indices_up=None, indptr_up=None, disp_ll=True, init_zeros=True,useNewton=True)
 

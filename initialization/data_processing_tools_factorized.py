@@ -4,6 +4,7 @@ import os,inspect,sys
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
 from data_processing_tools import emptyStruct
+from numba import jit
 
 def fast_stackCSRHes_memoryPreAllocation(vals, rowsptr, colindices, nnz, nrows, ncols, i0PTR, i0Val, newHes, sumK):
     """
@@ -47,9 +48,11 @@ def preproc_post_mean_factorizedModel(dat, returnDict=True):
             post_mean[tr] = np.zeros(T * sumK, dtype=np.float32, order='C')
             # start ordering it [K0*T, K1 *T, ... ]
             i0 = 0
+
             for j in range(len(dat.zdims)):
-                post_mean[tr][i0: i0 + dat.zdims[j] * T] = dat.posterior_inf[tr].mean[j] .flatten()  # here you have stacked [z_{0,1:T},z_{1,1:T}, ...]
+                post_mean[tr][i0: i0 + dat.zdims[j] * T] = dat.posterior_inf[tr].mean[j].T.flatten() # here you have stacked [z_{0,1:T},z_{1,1:T}, ...]
                 i0 += dat.zdims[j] * T
+
 
     if not returnDict:
         totDur = np.sum(list(dat.trialDur.values()))
@@ -57,7 +60,8 @@ def preproc_post_mean_factorizedModel(dat, returnDict=True):
         tr_dict = {}
         i0 = 0
         for tr in dat.trialDur.keys():
-            zbar[i0: i0+dat.trialDur[tr]*sumK] = post_mean[tr]
+            idx_sort = sortGradient_idx(dat.trialDur[tr], dat.zdims, isReverse=False)
+            zbar[i0: i0+dat.trialDur[tr]*sumK] = post_mean[tr][idx_sort]
             tr_dict[tr] = np.arange(i0, i0+dat.trialDur[tr]*sumK, dtype=np.int32)
             i0 += dat.trialDur[tr]*sumK
         return zbar, tr_dict
@@ -100,3 +104,48 @@ def fast_stackCSRHes(spHess, newHes):
 
     return csr.CSR(nrows, ncols, nnz, indptr, indices, values)
 
+
+jit(nopython=True)
+def sortGradient_idx( T, zdims, isReverse=False):
+    """
+    Sort array for gradient so that the latent are first stacked togheter on a certain time point
+    :return:
+    """
+    idx_sort = np.zeros(T*np.sum(zdims),dtype=int)
+    sumK = np.sum(zdims)
+    cc = 0
+    for jj in range(len(zdims)):
+        i0 = np.sum(zdims[:jj])
+        for tt in range(T):
+            idx_sort[cc: cc+ zdims[jj]] = np.arange(sumK * tt + i0, sumK*tt + i0 + zdims[jj])
+            cc += zdims[jj]
+    if not isReverse:
+        idx_sort = np.argsort(idx_sort)
+    return idx_sort
+
+
+@jit(nopython=True)
+def invertBlocks(*args):
+    """
+    Invert a list of T x Kj x Kj blocks of a block diagonal matri
+    we want to invert
+    :param args:
+    :return:
+    """
+    Kmax = 0
+    cc = 0
+    for k in range(len(args)):
+        blocks = args[k]
+        Kmax = max(Kmax, blocks.shape[1])
+        cc += blocks.shape[0]
+
+    M = np.zeros((cc, Kmax, Kmax),dtype=np.float64)
+    cc = 0
+    for k in range(len(args)):
+        blocks = args[k]
+        K = blocks.shape[1]
+        for t in range(blocks.shape[0]):
+            B = blocks[t]
+            M[cc, :K, :K] = np.linalg.inv(B)
+            cc += 1
+    return M
