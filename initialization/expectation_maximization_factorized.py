@@ -3,7 +3,8 @@ import os,sys
 basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(basedir,'core'))
 from learnGaussianParam import learn_GaussianParams,full_GaussLL
-from learnPoissonParam import all_trial_PoissonLL
+from learnPoissonParam import all_trial_PoissonLL,poissonELL_Sparse,grad_poissonELL_Sparse,hess_poissonELL_Sparse,newton_opt_CSR
+from data_processing_tools import sortGradient_idx
 from copy import deepcopy
 from inference_factorized import newton_optim_map, reconstruct_post_mean_and_cov
 from scipy.optimize import minimize
@@ -99,7 +100,7 @@ def grad_ascent(func,grad,Z0,tol=10**-8,max_iter=1000, disp_eval=True,max_having
 
 
 def expectation_mazimization_factorized(data, maxIter=10, tol=10 ** -3, use_badsGP=False,
-                             use_badsPoisson=False, tolPoissonOpt=10 ** -12,
+                             method='sparse-Newton', tolPoissonOpt=10 ** -12,
                              boundsW0=None, boundsW1=None, boundsD=None):
     """
 
@@ -170,52 +171,86 @@ def expectation_mazimization_factorized(data, maxIter=10, tol=10 ** -3, use_bads
             d = data.xPar[k]['d']
             N, K0 = C.shape
             K1 = C1.shape[1]
-            # L-BGFS-B optimization
-            parStack = np.hstack((C.flatten(), C1.flatten(), d))
-            if boundsW0 is None:
-                bW0 = np.array([-4, 4] * C.flatten().shape[0]).reshape(-1, 2)
-            else:
-                bW0 = np.array(list(boundsW0) * C.flatten().shape[0]).reshape(-1, 2)
-
-            if boundsW1 is None:
-                bW1 = np.array([-4, 4] * C1.flatten().shape[0]).reshape(-1, 2)
-            else:
-                bW1 = np.array(list(boundsW1) * C1.flatten().shape[0]).reshape(-1, 2)
-
-            if boundsD is None:
-                bD = np.array(list([-10, 5]) * d.shape[0]).reshape(-1, 2)
-            else:
-                bD = np.array(boundsD * d.shape[0]).reshape(-1, 2)
-
-            bounds = np.vstack([bW0, bW1, bD])
-
-            func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
-                                                   xx[N * K0:N * (K0 + K1)].reshape(N, K1),
-                                                   xx[N * (K0 + K1):],
-                                                   data, k + 1, block_trials=100, isGrad=False)
-            gr_func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
-                                                      xx[N * K0:N * (K0 + K1)].reshape(N, K1),
-                                                      xx[N * (K0 + K1):],
-                                                      data, k + 1, block_trials=100, isGrad=True)
-
             print('- Poisson M-step, observed population: %d/%d' % (k + 1, len(data.zdims) - 1))
-            ff = lambda x:-func(x)
-            gg = lambda x: -gr_func(x)
-            Z0, feval, feval_hist = grad_ascent(ff,gg,parStack,tol=10**-8,max_iter=100,disp_eval=False)
-            data.xPar[k]['W0'] = Z0[:N * K0].reshape(N, K0)
-            data.xPar[k]['W1'] = Z0[N * K0:N * (K0 + K1)].reshape(N, K1)
-            data.xPar[k]['d'] = Z0[N * (K0 + K1):]
-            nLL += feval
-            # res = minimize(func, parStack, jac=gr_func, method='L-BFGS-B', bounds=bounds,
-            #                tol=tolPoissonOpt)
-            # if res.success or res.fun < func(parStack):
-            #     data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
-            #     data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
-            #     data.xPar[k]['d'] = res.x[N * (K0 + K1):]
-            #     nLL += res.fun
-            # else:
-            #     nLL += func(parStack)
 
+            parStack = np.hstack((C.flatten(), C1.flatten(), d))
+            if method == 'L-BFGS-B':
+                # L-BGFS-B optimization
+                if boundsW0 is None:
+                    bW0 = np.array([-4, 4] * C.flatten().shape[0]).reshape(-1, 2)
+                else:
+                    bW0 = np.array(list(boundsW0) * C.flatten().shape[0]).reshape(-1, 2)
+
+                if boundsW1 is None:
+                    bW1 = np.array([-4, 4] * C1.flatten().shape[0]).reshape(-1, 2)
+                else:
+                    bW1 = np.array(list(boundsW1) * C1.flatten().shape[0]).reshape(-1, 2)
+
+                if boundsD is None:
+                    bD = np.array(list([-10, 5]) * d.shape[0]).reshape(-1, 2)
+                else:
+                    bD = np.array(boundsD * d.shape[0]).reshape(-1, 2)
+
+                bounds = np.vstack([bW0, bW1, bD])
+
+                func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
+                                                       xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                                       xx[N * (K0 + K1):],
+                                                       data, k + 1, block_trials=100, isGrad=False)
+                gr_func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
+                                                          xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                                          xx[N * (K0 + K1):],
+                                                          data, k + 1, block_trials=100, isGrad=True)
+
+
+                res = minimize(func, parStack, jac=gr_func, method='L-BFGS-B', bounds=bounds,
+                               tol=tolPoissonOpt)
+                if res.success or res.fun < func(parStack):
+                    data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
+                    data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
+                    data.xPar[k]['d'] = res.x[N * (K0 + K1):]
+                    nLL += res.fun
+                else:
+                    nLL += func(parStack)
+            elif method == 'gradient-ascent':
+
+                func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
+                                                       xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                                       xx[N * (K0 + K1):],
+                                                       data, k + 1, block_trials=100, isGrad=False)
+                gr_func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
+                                                          xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                                          xx[N * (K0 + K1):],
+                                                          data, k + 1, block_trials=100, isGrad=True)
+                ff = lambda x: -func(x)
+                gg = lambda x: -gr_func(x)
+                Z0, feval, feval_hist = grad_ascent(ff, gg, parStack, tol=10 ** -8, max_iter=100, disp_eval=False)
+                data.xPar[k]['W0'] = Z0[:N * K0].reshape(N, K0)
+                data.xPar[k]['W1'] = Z0[N * K0:N * (K0 + K1)].reshape(N, K1)
+                data.xPar[k]['d'] = Z0[N * (K0 + K1):]
+                nLL += feval
+
+            elif method == 'sparse-Newton':
+                C = data.xPar[k]['W0']
+                C1 = data.xPar[k]['W1']
+                d = data.xPar[k]['d']
+                N, K0 = C.shape
+                K1 = C1.shape[1]
+                # fast sparse matrix based newton optim
+
+                rot = sortGradient_idx(C.shape[0], [C.shape[1], C1.shape[1], 1], isReverse=False)
+                rotInv = sortGradient_idx(C.shape[0], [C.shape[1], C1.shape[1], 1], isReverse=True)
+                parStack = np.hstack((C.flatten(), C1.flatten(), d))[rot]
+                ff = lambda par: poissonELL_Sparse(par, k+1, data, rotInv)
+                gg = lambda par: grad_poissonELL_Sparse(par, k+1, data, rotInv)
+                hh = lambda par: hess_poissonELL_Sparse(par, k+1, data, rotInv, inverse=True, sparse=True)
+                Z0, feval, feval_hist = newton_opt_CSR(ff, gg, hh, parStack, tol=10 ** -8, max_iter=1000,
+                                                       disp_eval=True, max_having=30)
+                par_optim = Z0[rotInv]
+                data.xPar[k]['W0'] = par_optim[:N * K0].reshape(N, K0)
+                data.xPar[k]['W1'] = par_optim[N * K0:N * (K0 + K1)].reshape(N, K1)
+                data.xPar[k]['d'] = par_optim[N * (K0 + K1):]
+                nLL += feval / len(data.trialDur.keys())
 
         LL_list.append(-nLL)
         print('current LL: ', LL_list[-1])
@@ -241,10 +276,10 @@ if __name__ == '__main__':
     import matplotlib.pylab as plt
     cc = 0
 
-    mn_all = np.zeros((100,4,50))
-    std_all = np.zeros((100, 4, 50))
-    latent = np.zeros((100, 4, 50))
-    for N in [20,100,200,500]:
+    mn_all = np.zeros((100,1,50))
+    std_all = np.zeros((100, 1, 50))
+    latent = np.zeros((100, 1, 50))
+    for N in [500]:
         lat = 2
         if lat == 2:
             gen_dat = dataGen(100, N=200, N1=N,K2=2, K3=2, T=50,infer=False,setTruePar=True)
@@ -269,7 +304,7 @@ if __name__ == '__main__':
     cc = 1
     tr = 11
     plt.figure(figsize=(12, 4.5))
-    for N in [20, 100, 200, 500]:
+    for N in [500]:
         mn = mn_all[tr,cc-1]
         std = std_all[tr,cc-1]
         lt = latent[tr,cc-1]
@@ -285,7 +320,7 @@ if __name__ == '__main__':
     ## fit em
     dat2 = deepcopy(dat)
     dat2.initializeParam(dat2.zdims)
-    ll_list = expectation_mazimization_factorized(dat2, maxIter=4, boundsW0=[-3, 3], boundsD=[-10, 10])
+    ll_list = expectation_mazimization_factorized(dat2, maxIter=20, boundsW0=[-3, 3], boundsD=[-10, 10])
     mn = dat2.posterior_inf[tr].mean[lat][0]
     std = np.sqrt(dat2.posterior_inf[tr].cov_t[lat][:, 0, 0])
     lt = dat2.ground_truth_latent[tr][:, ii]
@@ -300,11 +335,11 @@ if __name__ == '__main__':
     res = model.fit(MN_post,lat.T)
 
     plt.figure(figsize=(12,4))
-    lat = 1
+    lat = 2
     plt.subplot(121)
     plt.title('True parameter latent posterior:')
-    tr = 13
-    mn0,mn1 = dat.posterior_inf[tr].mean[0]
+    tr = 29
+    mn0,mn1 = dat.posterior_inf[tr].mean[lat]
     p0, = plt.plot(mn0)
     p1, = plt.plot(mn1)
     std0 = np.sqrt(dat.posterior_inf[tr].cov_t[lat][:, 0, 0])
@@ -315,7 +350,7 @@ if __name__ == '__main__':
     plt.subplot(122)
     plt.title('EM parameter latent posterior:')
 
-    mn0, mn1 = dat2.posterior_inf[tr].mean[0]*-1
+    mn0, mn1 = dat2.posterior_inf[tr].mean[lat]*-1
     p1, = plt.plot(mn1)
     p0, = plt.plot(mn0)
 

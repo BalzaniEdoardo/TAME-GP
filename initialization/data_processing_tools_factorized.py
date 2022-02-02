@@ -3,37 +3,10 @@ import csr
 import os,inspect,sys
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
-from data_processing_tools import emptyStruct
+from data_processing_tools import emptyStruct,sortGradient_idx
 from numba import jit
 
-def fast_stackCSRHes_memoryPreAllocation(vals, rowsptr, colindices, nnz, nrows, ncols, i0PTR, i0Val, newHes, sumK):
-    """
-    Fast stacking of csr matrix format hessian of different trials. Strongly uses the fact that across trials the
-    structure of the matrix is the same. The important bit is to make sure that from one trial to another there are no
-    additional zeroos in the block structure of the matrix; thi in the factorized model computation of the hessian is
-    done by adding  (min + 1) to vector of values that go into the matrix.
-    :param spHess: hessian for the log likelihood of multiple trials in csr.CSR format
-    :param newHes: hessian for the log likelihood of a new trial in csr.CSR format that we want to stack as a new
-    block-diagonal component
-    :return:
-    """
-    # update indices
-    new_indices = newHes.colinds + colindices[i0Val-1] + 1
-    new_ptr = newHes.rowptrs + rowsptr[i0PTR]
 
-    # create the concatenated hessian
-    vals[i0Val: i0Val + newHes.values.shape[0]] = newHes.values
-    rowsptr[i0PTR: i0PTR + new_ptr.shape[0]] = new_ptr
-    colindices[i0Val: i0Val + newHes.values.shape[0]] = new_indices
-
-    nnz = nnz + newHes.nnz
-    nrows = nrows + newHes.nrows
-    ncols = ncols + newHes.ncols
-
-    i0Val = i0Val + newHes.values.shape[0]
-    i0PTR = i0PTR + new_ptr.shape[0] - 1
-
-    return nrows, ncols, nnz, rowsptr, colindices, vals, i0Val, i0PTR
 
 def preproc_post_mean_factorizedModel(dat, returnDict=True):
     sumK = np.sum(dat.zdims)
@@ -104,24 +77,6 @@ def fast_stackCSRHes(spHess, newHes):
 
     return csr.CSR(nrows, ncols, nnz, indptr, indices, values)
 
-
-jit(nopython=True)
-def sortGradient_idx( T, zdims, isReverse=False):
-    """
-    Sort array for gradient so that the latent are first stacked togheter on a certain time point
-    :return:
-    """
-    idx_sort = np.zeros(T*np.sum(zdims),dtype=int)
-    sumK = np.sum(zdims)
-    cc = 0
-    for jj in range(len(zdims)):
-        i0 = np.sum(zdims[:jj])
-        for tt in range(T):
-            idx_sort[cc: cc+ zdims[jj]] = np.arange(sumK * tt + i0, sumK*tt + i0 + zdims[jj])
-            cc += zdims[jj]
-    if not isReverse:
-        idx_sort = np.argsort(idx_sort)
-    return idx_sort
 
 
 @jit(nopython=True)

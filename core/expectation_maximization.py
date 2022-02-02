@@ -1,8 +1,9 @@
 import numpy as np
 from inference import multiTrialInference
 from learnGaussianParam import learn_GaussianParams,full_GaussLL
-from learnPoissonParam import all_trial_PoissonLL
+from learnPoissonParam import all_trial_PoissonLL,poissonELL_Sparse,grad_poissonELL_Sparse,hess_poissonELL_Sparse,newton_opt_CSR
 from learnGPParams import all_trial_GPLL
+from data_processing_tools import sortGradient_idx
 from copy import deepcopy
 from scipy.optimize import minimize
 import sys,os
@@ -46,7 +47,7 @@ def computeLL(data):
 
 
 def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
-                             use_badsPoisson=False, tolPoissonOpt=10**-12,
+                             method='sparse-Newton', tolPoissonOpt=10**-12,
                              boundsW0=None, boundsW1=None, boundsD=None):
     """
 
@@ -82,7 +83,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
     data.init_xPar = deepcopy(data.xPar)
     data.init_stimPar = deepcopy(data.stimPar)
     
-    if use_badsPoisson or use_badsGP:
+    if method=='BADS' or use_badsGP:
         gpOptim = badsOptim(data)
 
     # save the ll_list
@@ -107,7 +108,7 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
 
         # learn Poisson obs param
         for k in range(len(data.zdims) - 1):
-            if not use_badsPoisson:
+            if method == 'L-BFGS-B':
                 # extract parameters
                 C = data.xPar[k]['W0']
                 C1 = data.xPar[k]['W1']
@@ -150,14 +151,34 @@ def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                     nLL += res.fun
                 else:
                     nLL += func(parStack)
-            else:
+            elif method == 'BADS':
                 C, C1, d, f = gpOptim.bads_optimPoisson(data, k)
                 data.xPar[k]['W0'] = C
                 data.xPar[k]['W1'] = C1
                 data.xPar[k]['d'] = d
                 nLL += f/len(data.trialDur.keys())
 
+            elif method == 'sparse-Newton':
+                C = data.xPar[k]['W0']
+                C1 = data.xPar[k]['W1']
+                d = data.xPar[k]['d']
+                N, K0 = C.shape
+                K1 = C1.shape[1]
+                # fast sparse matrix based newton optim
 
+                rot = sortGradient_idx(C.shape[0], [C.shape[1], C1.shape[1], 1], isReverse=False)
+                rotInv = sortGradient_idx(C.shape[0], [C.shape[1], C1.shape[1], 1], isReverse=True)
+                parStack = np.hstack((C.flatten(), C1.flatten(), d))[rot]
+                ff = lambda par: poissonELL_Sparse(par, k+1, data, rotInv)
+                gg = lambda par: grad_poissonELL_Sparse(par, k+1, data, rotInv)
+                hh = lambda par: hess_poissonELL_Sparse(par, k+1, data, rotInv, inverse=True, sparse=True)
+                Z0, feval, feval_hist = newton_opt_CSR(ff, gg, hh, parStack, tol=10 ** -8, max_iter=1000,
+                                                       disp_eval=True, max_having=30)
+                par_optim = Z0[rotInv]
+                data.xPar[k]['W0'] = par_optim[:N * K0].reshape(N, K0)
+                data.xPar[k]['W1'] = par_optim[N * K0:N * (K0 + K1)].reshape(N, K1)
+                data.xPar[k]['d'] = par_optim[N * (K0 + K1):]
+                nLL += feval / len(data.trialDur.keys())
 
         # learn GP param
         for k in range(len(data.zdims)):

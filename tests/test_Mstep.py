@@ -7,10 +7,12 @@ from data_structure import P_GPCCA
 import unittest
 from learnGaussianParam import MStepGauss,grag_GaussLL_wrt_Rinv, grag_GaussLL_wrt_Wd,learn_GaussianParams,\
     compileTrialStackedObsAndLatent_gauss,logLike_Gauss
-from data_processing_tools import approx_grad,emptyStruct
-from learnPoissonParam import expectedLLPoisson,grad_expectedLLPoisson,compileTrialStackedObsAndLatent,all_trial_PoissonLL
+from data_processing_tools import approx_grad,emptyStruct,sortGradient_idx
+from learnPoissonParam import expectedLLPoisson,grad_expectedLLPoisson,compileTrialStackedObsAndLatent,all_trial_PoissonLL,\
+    hess_Poisson_ithunit,grad_Poisson_ithunit,hess_Poisson_all_trials,multiTrial_PoissonLL,grad_Poisson_all_trials,newton_opt_CSR
 from copy import deepcopy
 from scipy.optimize import minimize
+from scipy.linalg import block_diag
 from time import perf_counter
 np.random.seed(4)
 
@@ -25,7 +27,7 @@ class TestMStep(unittest.TestCase):
         self.K2 = 5
         self.K3 = 3
         self.K0 = 2
-        self.N = 7
+        self.N = 9
         self.N1 = 6
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
         ## derivative of the exponential being monotonic). The larger the T the more the error is accumulating so
@@ -246,7 +248,7 @@ class TestMStep(unittest.TestCase):
         err = np.abs(gr_func(parStack) - app_grad).max()
         bounds = [[-10, 10]] * len(parStack)
         t0 = perf_counter()
-        res_BFGS = minimize(func, np.zeros(parStack.shape), bounds=bounds, jac=gr_func, method='L-BFGS-B', tol=10 ** -10)
+        res_BFGS = minimize(func, np.zeros(parStack.shape), bounds=bounds, jac=gr_func, method='L-BFGS-B', tol=10 ** -12)
         t1 = perf_counter()
 
         tt0 = perf_counter()
@@ -262,6 +264,125 @@ class TestMStep(unittest.TestCase):
         print('SLSQP conv time without gradient: %f - nfev: %d'%(tt1_1-tt0_1,res_SLSQP_wo.nfev))
         print('error in gradient vs non grediant method:',err)
         self.assertLessEqual(err,10**-4)
+
+    def test_PoissonMStep_hess(self):
+        _, xList = self.struc.get_observations(0)
+        W0 = self.W02
+        W1 = self.W12
+        d = self.d2
+        mean_t = self.mean_01
+        cov_t = self.cov_01
+        x = xList[0]
+
+        dhh_d = x.sum(axis=0)
+        dhh_Call = np.einsum('ti,tj->ij', x, mean_t)
+
+        xdim = W0.shape[1]
+        icord = 0
+        parStack = np.hstack((W0[icord],W1[icord],d[icord]))
+        hess = hess_Poisson_ithunit(parStack, mean_t, cov_t, inverse=False)
+
+        def grad_poiss(pars,dhh_d,dhh_Call,icord,xdim):
+            d_d,d_C,d_C1 = grad_Poisson_ithunit(pars[:xdim], pars[xdim:-1], pars[-1], mean_t, cov_t)
+            concat = np.hstack(( dhh_Call[icord] - np.hstack((d_C,d_C1)),[dhh_d[icord] - d_d] ))
+            return concat
+
+        grad = lambda x: grad_poiss(x,dhh_d,dhh_Call,icord,xdim)
+        ap_hes = approx_grad(parStack,(parStack.shape[0],)*2, grad,10**-5)
+        err = np.linalg.norm(hess-ap_hes)
+        self.assertLessEqual(err, 10 ** -6)
+
+        def grad_func( xx, data):
+
+            N = len(data.trialDur.keys())
+            grd = multiTrial_PoissonLL(xx[:np.prod(W0.shape)].reshape(W0.shape), xx[np.prod(W0.shape):np.prod(W0.shape) + np.prod(
+                                       W1.shape)].reshape(W1.shape), xx[np.prod(W0.shape) + np.prod(W1.shape):], data,
+                                       1, trial_num=None, isGrad=True, trial_list=None, test=False)*N
+            return grd
+
+        rot = sortGradient_idx(W0.shape[0], [W0.shape[1], W1.shape[1],1],isReverse=False)
+        gr_func = lambda xx: grad_func(xx, self.struc)
+        parStack_all = np.hstack((W0.flatten(), W1.flatten(),d))#[rot]
+
+
+        H = hess_Poisson_all_trials(d,W0,W1,1,self.struc,list(self.struc.trialDur.keys()),inverse=False,sparse=False)
+        hess_ap = approx_grad(parStack_all,(parStack_all.shape[0],)*2,gr_func,10**-5)
+        hess_ap = hess_ap[rot,:][:,rot]
+        hess_blk = block_diag(*H)
+        self.assertLessEqual(np.abs(hess_ap-hess_blk).max()/np.mean(np.abs(H)),10**-5)
+
+
+
+
+        ## test optim
+
+        def fun(par, idx_latent, data, rotInv):
+            xx = par[rotInv]
+            K0 = data.zdims[0]
+            K1 = data.zdims[idx_latent]
+            N = data.xPar[idx_latent - 1]['d'].shape[0]
+            W0 = xx[:K0 * N].reshape(N, K0)
+            W1 = xx[K0 * N:(K0 * N) + (K1 * N)].reshape(N, K1)
+            d = xx[(K0 * N) + (K1 * N):]
+            trNum = len(data.trialDur.keys())
+            f = multiTrial_PoissonLL(W0, W1, d, data, 1, trial_num=None, isGrad=False, trial_list=None, test=False) * trNum
+            return f
+
+        def grad_fun(par, idx_latent, data, rotInv):
+            xx = par[rotInv]
+            K0 = data.zdims[0]
+            K1 = data.zdims[idx_latent]
+            N = data.xPar[idx_latent - 1]['d'].shape[0]
+            W0 = xx[:K0 * N].reshape(N, K0)
+            W1 = xx[K0 * N:(K0 * N) + (K1 * N)].reshape(N, K1)
+            d = xx[(K0 * N) + (K1 * N):]
+            grd = grad_Poisson_all_trials(d, W0, W1, idx_latent, data, trial_list=None)
+            grd = grd#[rotinv]
+            return grd
+
+        def hess_fun(par, idx_latent,data, rotInv, inverse=True,sparse=True):
+            xx = par[rotInv]
+            K0 = data.zdims[0]
+            K1 = data.zdims[idx_latent]
+            N = data.xPar[idx_latent-1]['d'].shape[0]
+            W0 = xx[:K0*N].reshape(N,K0)
+            W1 = xx[K0 * N:(K0*N)+ (K1*N)].reshape(N, K1)
+            d = xx[(K0*N)+ (K1*N):]
+            hes = hess_Poisson_all_trials(d, W0, W1, idx_latent, data, trial_list=None, inverse=inverse, sparse=sparse)
+            return hes
+
+
+        rot = sortGradient_idx(W0.shape[0], [W0.shape[1], W1.shape[1],1],isReverse=False)
+        rotInv = sortGradient_idx(W0.shape[0], [W0.shape[1], W1.shape[1], 1], isReverse=True)
+        ff = lambda par: fun(par, 1, self.struc, rotInv)
+        gg = lambda par: grad_fun(par, 1, self.struc, rotInv)
+        hh = lambda par: hess_fun(par, 1, self.struc, rotInv, inverse=True, sparse=True)
+
+
+        parStack_all = np.hstack((W0.flatten(), W1.flatten(),d))[rot]*0
+        # HH = block_diag(*hh(parStack_all))
+        t0 = perf_counter()
+        Z0, feval, feval_hist = newton_opt_CSR(ff, gg, hh, parStack_all, tol=10**-8, max_iter=1000, disp_eval=True,max_having=30)
+        par_fit = Z0[rotInv]
+        t1=perf_counter()
+
+        print('SPARSE HESS NEWTON %.5fsec'%(t1-t0))
+        N,K0 = W0.shape
+        K1 = W1.shape[1]
+        func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0), xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                               xx[N * (K0 + K1):],
+                                               self.struc, 1, block_trials=100, isGrad=False)
+        gr_func = lambda xx: -all_trial_PoissonLL(xx[:N * K0].reshape(N, K0),
+                                                  xx[N * K0:N * (K0 + K1)].reshape(N, K1),
+                                                  xx[N * (K0 + K1):],
+                                                  self.struc, 1, block_trials=100, isGrad=True)
+
+        bounds = [[-10, 10]] * len(parStack_all)
+        t0 = perf_counter()
+        res_BFGS = minimize(func, np.zeros(parStack_all.shape), bounds=bounds, jac=gr_func, method='L-BFGS-B',
+                            tol=10 ** -12)
+        t1 = perf_counter()
+        print('BFGS %.5fsec'%(t1-t0))
 
 
 if __name__ == "__main__":

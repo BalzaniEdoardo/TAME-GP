@@ -1,3 +1,4 @@
+inference_syntetic_data/*
 *.mat
 firefly_utils/*
 *.npy

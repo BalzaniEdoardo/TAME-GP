@@ -8,8 +8,8 @@ import os,sys,inspect
 basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
 sys.path.append(os.path.join(basedir,'core'))
 from time import perf_counter
-from data_processing_tools import block_inv, approx_grad, emptyStruct
-from data_processing_tools_factorized import fast_stackCSRHes_memoryPreAllocation, preproc_post_mean_factorizedModel,invertBlocks,sortGradient_idx
+from data_processing_tools import block_inv, approx_grad, emptyStruct, fast_stackCSRHes_memoryPreAllocation,sortGradient_idx
+from data_processing_tools_factorized import preproc_post_mean_factorizedModel
 import scipy.sparse as sparse
 from numba import jit
 import csr
