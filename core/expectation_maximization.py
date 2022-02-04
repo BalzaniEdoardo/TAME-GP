@@ -46,7 +46,7 @@ def computeLL(data):
     return LL,llgauss,ll_poiss,ll_gp
 
 
-def expectation_mazimization(data, maxIter=10, tol=10**-3, use_badsGP=False,
+def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                              method='sparse-Newton', tolPoissonOpt=10**-12,
                              boundsW0=None, boundsW1=None, boundsD=None):
     """
@@ -243,8 +243,46 @@ if __name__ == '__main__':
     print('fit par')
     print(computeLL(subStruc)[0]-computeLL(dat_true)[0])
     print('true par')
-    expectation_mazimization(dat_true,maxIter=44,boundsW0=[-3,3],boundsD=[-10,10])
+    expectation_maximization(dat_true,maxIter=44,boundsW0=[-3,3],boundsD=[-10,10])
 
 
 
 
+    # plt.figure()
+    # plt.title('EM reconstructed posterior: N %d'%N)
+    # p, = plt.plot(mn)
+    # plt.fill_between(np.arange(mn.shape[0]), mn - 1.96 * std, mn + 1.96 * std, color=p.get_color(), alpha=0.4)
+    # plt.plot(lt, color='k')
+    # model = LinearRegression()
+    # MN_post = dat2.posterior_inf[tr].mean[1]
+    # lat = dat2.ground_truth_latent[tr][:, ii:ii+dat2.zdims[lat]]
+    # res = model.fit(MN_post,lat.T)
+    #
+    # plt.figure(figsize=(12,4))
+    # lat = 2
+    # plt.subplot(121)
+    # plt.title('True parameter latent posterior:')
+    # tr = 29
+    # mn0,mn1 = dat.posterior_inf[tr].mean[lat]
+    # p0, = plt.plot(mn0)
+    # p1, = plt.plot(mn1)
+    # std0 = np.sqrt(dat.posterior_inf[tr].cov_t[lat][:, 0, 0])
+    # std1 = np.sqrt(dat.posterior_inf[tr].cov_t[lat][:, 1, 1])
+    # plt.fill_between(range(mn0.shape[0]), mn0-std0, mn0+std0,alpha=0.4,color=p0.get_color())
+    # plt.fill_between(range(mn1.shape[0]), mn1-std1, mn1+std1,alpha=0.4,color=p1.get_color())
+    #
+    # plt.subplot(122)
+    # plt.title('EM parameter latent posterior:')
+    #
+    # mn0, mn1 = dat2.posterior_inf[tr].mean[lat]*-1
+    # p1, = plt.plot(mn1)
+    # p0, = plt.plot(mn0)
+    #
+    # std1 = np.sqrt(dat2.posterior_inf[tr].cov_t[lat][:, 0, 0])
+    # std0 = np.sqrt(dat2.posterior_inf[tr].cov_t[lat][:, 1, 1])
+    # plt.fill_between(range(mn0.shape[0]), mn0 - std0, mn0 + std0, alpha=0.4, color=p0.get_color())
+    # plt.fill_between(range(mn1.shape[0]), mn1 - std1, mn1 + std1, alpha=0.4, color=p1.get_color())
+    #
+    #
+    #
+    #

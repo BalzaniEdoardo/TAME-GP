@@ -7,7 +7,8 @@ from data_processing_tools import emptyStruct
 from copy import deepcopy
 
 class P_GPCCA(object):
-    def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001):
+    def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001,
+                 transposeY = False):
         """
         :param preProc: structure with attributes:
             * numTrials: int, number of trials
@@ -41,8 +42,13 @@ class P_GPCCA(object):
             self.trialDur = {}  # np.zeros(self.preproc.numTrials, dtype=int)
             data = {}
             for tr in range(self.preproc.numTrials):
-                self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
-                data[tr] = self.preproc.data[tr]
+                if not transposeY:
+                    self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
+                    data[tr] = self.preproc.data[tr]
+                else:
+                    self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[1]
+                    tmp = self.preproc.data[tr]['Y'].T
+                    data[tr] = {'Y':tmp}
 
             cov = {}
             for var in self.preproc.covariates.keys():

@@ -5,7 +5,7 @@ a single method.
 """
 import numpy as np
 import os,sys,inspect
-basedir = os.path.dirname(os.path.dirname(inspect.getfile(inspect.currentframe())))
+basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(basedir,'core'))
 from time import perf_counter
 from data_processing_tools import block_inv, approx_grad, emptyStruct, fast_stackCSRHes_memoryPreAllocation,sortGradient_idx
@@ -245,9 +245,11 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
         # numba compatible
         spHess = csr.CSR.from_scipy(spHess)
     else:
-        spHess = sparse.csr_matrix((H.flatten(), indices, indptr))
         # numba compatible
-        spHess = csr.CSR.from_scipy(spHess)
+        nnz = np.prod(H.shape)
+        ncols = sumK * T
+        nrows = sumK * T
+        spHess = csr.CSR(nrows, ncols, nnz, indptr, indices, H.flatten())
 
     return spHess, indices, indptr
 
@@ -294,7 +296,8 @@ def invertLoop(Binvs,Cs,As):
     return M
 
 
-def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, returnLL=False, inverse=True):
+def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, returnLL=False, inverse=True,
+                                      trialDur_variable=False):
     indices = None
     indptr = None
     idx_sort = None
@@ -306,10 +309,28 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
     grad = np.zeros(totDur * sumK, dtype=np.float64, order='C')
     i0 = 0
     LL = 0
+    tmax = max(list(dat.trialDur.values()))
+    indicesMax = np.zeros(tmax*sumK**2,dtype=np.int32)
+    indptrMax = np.zeros(tmax*sumK+1,dtype=np.int32)
 
     for trNum in dat.trialDur.keys():
         stim, xList = dat.get_observations(trNum)
         # print('tr %d'%trNum)
+        if trialDur_variable:
+            T = dat.trialDur[trNum]
+            rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=True)
+            idx_sort = np.argsort(rev_idx_sort)
+            indicesMax[:T*sumK**2] = np.repeat(np.arange(T), sumK ** 2) * sumK + np.tile(np.arange(sumK), T * sumK)
+            indptrMax[:T*sumK+1] = sumK * np.arange(sumK*T+1)
+        else:
+            indicesMax = indices
+            indptrMax = indptr
+            if indicesMax is None:
+                T = dat.trialDur[trNum]
+                indicesMax = np.repeat(np.arange(T), sumK ** 2) * sumK + np.tile(np.arange(sumK), T * sumK)
+                indptrMax = sumK * np.arange(sumK*T+1)
+
+
         if isDict:
             zbar = post_mean[trNum]
         else:
@@ -318,8 +339,9 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
         if returnLL:
             continue
         # t0 = perf_counter()
+
         hesInv, indices, indptr = hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar,
-                                                          inverse=inverse, indices=indices, indptr=indptr)
+                                                          inverse=inverse, indices=indicesMax[:T*sumK**2], indptr=indptrMax[:T*sumK+1])
         # tt1 = perf_counter()
         grad[i0:i0 + dat.trialDur[trNum]*sumK], idx_sort, rev_idx_sort = grad_factorized_logLike(dat, trNum, stim,
                                                                                                      xList,
@@ -327,16 +349,16 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
                                                                                                      idx_sort=idx_sort,
                                                                     rev_idx_sort=rev_idx_sort, useGauss=1, usePoiss=1)
         i0 += dat.trialDur[trNum]*sumK
-        # t1 = perf_counter()
-        # print('hess compute',tt1-t0)
-        # print('grad compute', t1 - tt1)
+
         if first:
-            indPTRSize = (hesInv.rowptrs.shape[0] - 1) * stackNum + 1
-            indValSize = (hesInv.values.shape[0]) * stackNum
-            indColSize = (hesInv.values.shape[0]) * stackNum
+            indValSize = (totDur) * (sumK ** 2)
+            indColSize = (totDur) * (sumK ** 2)
+            indPTRSize = (totDur) * sumK + 1
+
             vals = -np.ones(indValSize, dtype=np.float64, order='C')
             indcols = -np.ones(indColSize, dtype=np.int32, order='C')
             rowptr = np.zeros(indPTRSize, dtype=np.int32, order='C')
+
             i0Val = 0
             i0PTR = 0
             nrows = 0
@@ -353,13 +375,101 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
     return LL, grad, hesInv
 
 
+def trialByTrialInference(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=False,init_zeros=False,
+                     useNewton=True, trialDur_variable=False):
+    eps_float = np.finfo(float).eps
+
+    sumK = np.sum(dat.zdims)
+    LL = 0
+    tmax = max(list(dat.trialDur.values()))
+    indicesMax = np.zeros(tmax * sumK ** 2, dtype=np.int32)
+    indptrMax = np.zeros(tmax * sumK + 1, dtype=np.int32)
+    Z0, tr_dict = preproc_post_mean_factorizedModel(dat, returnDict=False)
+    Z0 = (1 - init_zeros) * Z0
+    init_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False, returnLL=True)
+    print('initial MAP log post',init_ll)
+
+    for trNum in dat.trialDur.keys():
+        stim, xList = dat.get_observations(trNum)
+        # print('tr %d'%trNum)
+
+        T = dat.trialDur[trNum]
+        rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=False)
+        idx_sort = np.argsort(rev_idx_sort)
+        indicesMax[:T * sumK ** 2] = np.repeat(np.arange(T), sumK ** 2) * sumK + np.tile(np.arange(sumK), T * sumK)
+        indptrMax[:T * sumK + 1] = sumK * np.arange(sumK * T + 1)
+
+        zbar = Z0[tr_dict[trNum]]
+        ii = 0
+        delta_ll = np.inf
+
+        tmpZ = zbar.copy()
+        # ll_hist = []
+        while ii < max_iter and delta_ll > tol:
+            log_like = factorized_logLike(dat, trNum, stim, xList, zbar=zbar, idx_sort=idx_sort, rev_idx_sort=rev_idx_sort)
+            if ii == 0:
+                print('trial %d:'%trNum, 'initial LL',log_like)
+
+            hess_ll = hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar,
+                                                              inverse=True, indices=indicesMax[:T * sumK ** 2],
+                                                              indptr=indptrMax[:T * sumK + 1])[0]
+            grad_ll = grad_factorized_logLike(dat, trNum, stim, xList, zbar=zbar, idx_sort=idx_sort,rev_idx_sort=rev_idx_sort,
+                                                                                                       useGauss=1,
+                                                                                                       usePoiss=1)[0]
+
+            # if disp_ll:
+            #     print('tr %d newton optim iter'%trNum, ii, 'log-like', log_like)
+            if useNewton:
+                delt = hess_ll.mult_vec(grad_ll)
+            else:
+                delt = -grad_ll  # hess_ll.mult_vec(grad_ll)
+                # print('sparse solve time', perf_counter() - t0)
+            step = 1
+            new_ll = -np.inf
+            step_halv = 0
+
+            # t0 = perf_counter()
+            while new_ll < log_like and step_halv < max_having:
+                tmpZ = zbar - step * delt.reshape(zbar.shape)
+                new_ll = factorized_logLike(dat, trNum, stim, xList, zbar=tmpZ, idx_sort=idx_sort, rev_idx_sort=rev_idx_sort)
+                #all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+
+                delta_ll = new_ll - log_like
+                #print('halving #%d, ' % step_halv, delta_ll)
+                step = step / 2
+                step_halv += 1
+
+            # print('step halving time', perf_counter() - t0)
+            if new_ll == -np.inf or (log_like - new_ll > np.sqrt(eps_float)):
+                # print(log_like - new_ll)
+                LL += log_like
+                Z0[tr_dict[trNum]] = zbar
+                #ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+                continue
+            #ll_hist.append(new_ll)
+            zbar = tmpZ
+
+            ii += 1
+        LL += new_ll
+        print('trial %d:' % trNum, 'final LL', new_ll)
+        Z0[tr_dict[trNum]] = zbar
+    print('final MAP log post', LL)
+    return Z0,tr_dict,LL
 
 
-def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,disp_ll=False,init_zeros=False,
-                     useNewton=True):
+def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=False,init_zeros=False,
+                     useNewton=True, trialDur_variable=False, randInit=False):
     eps_float = np.finfo(float).eps
     Z0, tr_dict = preproc_post_mean_factorizedModel(dat,returnDict=False)
     Z0 = (1-init_zeros)*Z0
+    if all(Z0==0) and randInit:
+        # random small coeff init
+        llabs = np.inf
+        n = 1
+        while np.isinf(llabs):
+            Z0 = 0.5**n * np.random.normal(size=Z0.shape)
+            llabs = np.abs(all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False, returnLL=True))
+            n += 1
     ii = 0
     delta_ll = np.inf
 
@@ -368,7 +478,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,disp_ll=Fal
     while ii < max_iter and delta_ll > tol:
 
         # t0 = perf_counter()
-        log_like, grad_ll, hess_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False)
+        log_like, grad_ll, hess_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False,trialDur_variable=trialDur_variable)
         if disp_ll:
             print('newton optim iter', ii, 'log-like', log_like)
         if useNewton:
@@ -387,8 +497,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,disp_ll=Fal
             new_ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
 
             delta_ll = new_ll - log_like
-            # if disp_ll:
-            #     print('halv step log-like', step_halv + 1, new_ll)
+            #print('halving #%d, ' % step_halv, delta_ll)
             step = step / 2
             step_halv += 1
 
@@ -396,7 +505,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=15,disp_ll=Fal
         if new_ll == -np.inf or (log_like - new_ll > np.sqrt(eps_float)):
             print(log_like - new_ll)
             ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
-            return Z0, False, tr_dict, ll
+            return Z0, False, tr_dict, ll, ll_hist
         ll_hist.append(new_ll)
         Z0 = tmpZ
         # if disp_ll:

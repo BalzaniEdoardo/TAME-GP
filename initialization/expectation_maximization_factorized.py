@@ -5,8 +5,9 @@ sys.path.append(os.path.join(basedir,'core'))
 from learnGaussianParam import learn_GaussianParams,full_GaussLL
 from learnPoissonParam import all_trial_PoissonLL,poissonELL_Sparse,grad_poissonELL_Sparse,hess_poissonELL_Sparse,newton_opt_CSR
 from data_processing_tools import sortGradient_idx
+from data_processing_tools_factorized import preproc_post_mean_factorizedModel
 from copy import deepcopy
-from inference_factorized import newton_optim_map, reconstruct_post_mean_and_cov
+from inference_factorized import newton_optim_map, reconstruct_post_mean_and_cov,trialByTrialInference
 from scipy.optimize import minimize
 from sklearn.linear_model import LinearRegression
 
@@ -99,9 +100,10 @@ def grad_ascent(func,grad,Z0,tol=10**-8,max_iter=1000, disp_eval=True,max_having
     return Z0, feval, feval_hist
 
 
-def expectation_mazimization_factorized(data, maxIter=10, tol=10 ** -3, use_badsGP=False,
+def expectation_maximization_factorized(data, maxIter=10, tol=10 ** -8,
                              method='sparse-Newton', tolPoissonOpt=10 ** -12,
-                             boundsW0=None, boundsW1=None, boundsD=None):
+                             boundsW0=None, boundsW1=None, boundsD=None,trialDur_variable=False,
+                             useNewton=False,trial_block=100):
     """
 
     :param data: P_GPCCA structure
@@ -150,10 +152,36 @@ def expectation_mazimization_factorized(data, maxIter=10, tol=10 ** -3, use_bads
         # infer latent
         print('- E-step')
         # find zmap latent
-        zmap, success, td, ll, ll_hist = newton_optim_map(data, tol=10 ** -10, max_iter=100, max_having=20,
-                                                          disp_ll=True, init_zeros=True, useNewton=True)
-        # reconstruct the usual posterior structure and store
-        reconstruct_post_mean_and_cov(data, zmap, td)
+        if trial_block==1:
+            zmap, td,ll = trialByTrialInference(data, tol=10 ** -10, max_iter=100, max_having=30,
+                                                              disp_ll=True, init_zeros=True, useNewton=useNewton,
+                                                              trialDur_variable=trialDur_variable)
+            reconstruct_post_mean_and_cov(data, zmap, td)
+
+
+        elif trial_block < len(data.trialDur.keys()):
+            tr_list = list(data.trialDur.keys())
+            Z0, tr_dict = preproc_post_mean_factorizedModel(data, returnDict=False)
+            for k in range(0, len(tr_list), trial_block):
+                print('trial block: [%d, %d]'%(k,min(k+trial_block,len(tr_list))))
+                trs = tr_list[k:k+trial_block]
+                sub_data = data.subSampleTrial(trs)
+                zmap, success, td, ll, ll_hist = newton_optim_map(sub_data, tol=10 ** -10, max_iter=100, max_having=30,
+                                                                  disp_ll=True, init_zeros=True, useNewton=useNewton,
+                                                                  trialDur_variable=trialDur_variable)
+                # store the results
+                for tr in trs:
+                    Z0[tr_dict[tr]] = zmap[td[tr]]
+            #recompute the map
+            reconstruct_post_mean_and_cov(data, Z0, tr_dict)
+
+
+        else:
+            zmap, success, td, ll, ll_hist = newton_optim_map(data, tol=10 ** -10, max_iter=100, max_having=20,
+                                                          disp_ll=True, init_zeros=True, useNewton=useNewton,
+                                                              trialDur_variable=trialDur_variable)
+            # reconstruct the usual posterior structure and store
+            reconstruct_post_mean_and_cov(data, zmap, td)
 
 
         if ii == 0:
@@ -261,7 +289,8 @@ def expectation_mazimization_factorized(data, maxIter=10, tol=10 ** -3, use_bads
     data.ll_iter.append(LL_list)
     print('Final Posterior Inference....')
     zmap, success, td, ll, ll_hist = newton_optim_map(data, tol=10 ** -10, max_iter=100, max_having=20,
-                                                      disp_ll=True, init_zeros=True, useNewton=True)
+                                                      disp_ll=True, init_zeros=True, useNewton=True,
+                                                      trialDur_variable=trialDur_variable)
     # reconstruct the usual posterior structure and store
     reconstruct_post_mean_and_cov(data, zmap, td)
 
@@ -320,7 +349,7 @@ if __name__ == '__main__':
     ## fit em
     dat2 = deepcopy(dat)
     dat2.initializeParam(dat2.zdims)
-    ll_list = expectation_mazimization_factorized(dat2, maxIter=20, boundsW0=[-3, 3], boundsD=[-10, 10])
+    ll_list = expectation_maximization_factorized(dat2, maxIter=20, boundsW0=[-3, 3], boundsD=[-10, 10])
     mn = dat2.posterior_inf[tr].mean[lat][0]
     std = np.sqrt(dat2.posterior_inf[tr].cov_t[lat][:, 0, 0])
     lt = dat2.ground_truth_latent[tr][:, ii]
@@ -358,7 +387,6 @@ if __name__ == '__main__':
     std0 = np.sqrt(dat2.posterior_inf[tr].cov_t[lat][:, 1, 1])
     plt.fill_between(range(mn0.shape[0]), mn0 - std0, mn0 + std0, alpha=0.4, color=p0.get_color())
     plt.fill_between(range(mn1.shape[0]), mn1 - std1, mn1 + std1, alpha=0.4, color=p1.get_color())
-
 
 
 

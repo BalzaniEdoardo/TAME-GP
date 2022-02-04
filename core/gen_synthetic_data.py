@@ -6,7 +6,7 @@ from data_processing_tools import emptyStruct
 
 class dataGen(object):
 
-    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, infer=True, setTruePar=True):
+    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, meanZ0Levels=[0], infer=True, setTruePar=True,add_trend=False):
         super(dataGen,self).__init__()
         np.random.seed(90)
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
@@ -53,12 +53,22 @@ class dataGen(object):
         preproc.T = np.array([T]*trNum)
         preproc.covariates = {}
         preproc.data = []
-
         for k in range(D):
             preproc.covariates['var%d' % k] = []
         ground_truth_latent = []
+        numBlock = trNum / len(meanZ0Levels)
+        self.blokTr = {}
         for tr in range(trNum):
-            z = np.random.multivariate_normal(mean=np.zeros(K0 * T), cov=K_big0, size=1).reshape(K0, T).T
+
+            blkId = int(tr // numBlock)
+            #print(tr,blkId)
+            if add_trend:
+                yy = np.linspace(-1,1,T)*meanZ0Levels[blkId]
+            self.blokTr[tr] = blkId
+
+            z = np.random.multivariate_normal(mean=np.ones(K0 * T)*meanZ0Levels[blkId], cov=K_big0, size=1).reshape(K0, T).T
+            if add_trend:
+                z = z + yy.reshape(z.shape[0],1)
             z2 = np.random.multivariate_normal(mean=np.zeros(K2 * T), cov=K_big2, size=1).reshape(K2,T).T
             z3 = np.random.multivariate_normal(mean=np.zeros(K3 * T), cov=K_big3, size=1).reshape(K3,T).T
 
@@ -89,7 +99,7 @@ class dataGen(object):
         # create the data structure
         self.cca_input = P_GPCCA(preproc, list(preproc.covariates.keys()), ['A', 'B'],
                                    np.array(['A'] * N + ['B'] * N1),
-                                   np.ones(preproc.ydim, dtype=bool))
+                                   np.ones(preproc.ydim, dtype=bool),transposeY=False)
         self.cca_input.ground_truth_latent = ground_truth_latent
         self.cca_input.initializeParam([K0, K2, K3])
         if setTruePar:

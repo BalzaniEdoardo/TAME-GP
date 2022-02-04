@@ -179,9 +179,24 @@ class TestLogLikelihood(unittest.TestCase):
         reconstruct_post_mean_and_cov(self.struc, zmap, td)
         Zopt, _ = preproc_post_mean_factorizedModel(self.struc, returnDict=False)
 
-        grd_at_opt = all_trial_ll_grad_hess_factorized(self.struc, zmap, tr_dict=td, isDict=False, returnLL=False)[1]
+        ll,grd_at_opt,hes = all_trial_ll_grad_hess_factorized(self.struc, zmap, tr_dict=td, isDict=False, returnLL=False,trialDur_variable = False)
+        ll2, grd_at_opt2,hes2 = all_trial_ll_grad_hess_factorized(self.struc, zmap, tr_dict=td, isDict=False, returnLL=False,
+                                                        trialDur_variable = True)
+
+
         self.assertLessEqual(np.abs(zmap-Zopt).max(),10**-5)
         self.assertLessEqual(np.abs(grd_at_opt).max(),10**-6)
+
+        zmap = np.random.normal(size=zmap.shape)
+        ll, grd_at_opt, hes = all_trial_ll_grad_hess_factorized(self.struc, zmap, tr_dict=td, isDict=False,
+                                                                returnLL=False, trialDur_variable=False)
+        ll2, grd_at_opt2, hes2 = all_trial_ll_grad_hess_factorized(self.struc, zmap, tr_dict=td, isDict=False,
+                                                                   returnLL=False,
+                                                                   trialDur_variable=True)
+
+        self.assertLessEqual(np.abs(ll - ll2), 10 ** -13)
+        self.assertLessEqual(np.abs(hes.to_scipy().toarray() - hes2.to_scipy().toarray()).max(), 10 ** -13)
+        self.assertLessEqual(np.abs(grd_at_opt2 - grd_at_opt).max(), 10 ** -13)
         ## check that the posterior still looks good
 
 
