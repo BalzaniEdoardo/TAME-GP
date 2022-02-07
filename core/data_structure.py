@@ -5,6 +5,7 @@ The class needs to store spikes and task variables, initialize parameters and se
 import numpy as np
 from data_processing_tools import emptyStruct
 from copy import deepcopy
+from sklearn.cross_decomposition import CCA
 
 class P_GPCCA(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001,
@@ -64,7 +65,7 @@ class P_GPCCA(object):
                 self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
 
 
-    def initializeParam(self, zdims, use_poissonPCA=False):
+    def initializeParam(self, zdims, use_poissonPCA=False, use_cca_for_stim=True):
         """
         Naive params initialization using random projection weights.
         :param zdims: list of the latent dimensions
@@ -97,6 +98,7 @@ class P_GPCCA(object):
             var_cc = 0
             for var in self.var_list:
                 stim_all[var_cc, cc:cc + T] = self.preproc.covariates[var][tr]
+                var_cc += 1
             cc += T
 
         xDims = []
@@ -110,12 +112,39 @@ class P_GPCCA(object):
             xMeans_area = np.mean(spikes[sel],1) + 1e-10
             xLogMeans.append(np.log(xMeans_area))
             if use_poissonPCA:
-                covY = np.cov(spikes[sel])
+
+                # for CCA
+                model = CCA(n_components=min(stim_all.shape[0],sel.sum()))
+                model.fit(np.sqrt(spikes[sel].T), stim_all.T)
+                V1 = model.x_rotations_
+                # Y = np.vstack((spikes[sel], stim_all))
+                # covY = np.cov(Y)
+                # ee, U = np.linalg.eigh(covY[:sel.sum(), :sel.sum()])
+                # sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee+0.001))), U.T)
+                # ee2, U2 = np.linalg.eigh(covY[sel.sum():, sel.sum():])
+                # sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2+0.001))), U2.T)
+                # M = np.dot(np.dot(np.linalg.inv(sqrtY11), covY[:sel.sum(), sel.sum():]), np.linalg.inv(sqrtY22))
+                # V1, d, V2 = np.linalg.svd(M)
+                # V1 = np.dot(np.linalg.inv(sqrtY11), V1)
+                # idx = np.argsort(d)
+                #V1 = V1[:, idx]
+                # W0_list.append(np.log(np.abs(V1[:, :zdims[0]])))
+                W0_list.append(V1[:, :zdims[0]])
+
+
+                # for PCA
+                ## look in orthogonal spaces
+                mn_spk = np.mean(spikes[sel], axis=1)
+                orth_dim = V1[:, zdims[0]:]
+                proj_in_orth_space = (np.dot(np.dot((spikes[sel].T - mn_spk), orth_dim),orth_dim.T) + mn_spk).T
+                covY = np.cov(proj_in_orth_space)
+                ## no orth assumption
+                # covY = np.cov(spikes[sel])
 
                 # moment conversion between Poisson & Gaussian with exponential nonlinearity (taken from K. Machens code)
                 lamb = np.log(np.abs(covY + np.outer(xMeans_area, xMeans_area) - np.diag(xMeans_area))) - np.log(np.outer(xMeans_area, xMeans_area))
                 # PCA
-                evals, evecs = np.linalg.eig(lamb)
+                evals, evecs = np.linalg.eigh(lamb)
                 idx = np.argsort(evals)[::-1]
                 evecs = evecs[:, idx]
                 # sort eigenvectors according to same index
@@ -124,19 +153,7 @@ class P_GPCCA(object):
                 evecs = evecs[:, :zdims[cc]]
                 W1_list.append(evecs)
 
-                # repeat for CCA
-                Y = np.vstack((spikes[sel], stim_all))
-                covY = np.cov(Y)
-                ee,U = np.linalg.eigh(covY[:sel.sum(),:sel.sum()])
-                sqrtY11  = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
-                ee2, U2 = np.linalg.eigh(covY[sel.sum():, sel.sum():])
-                sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
-                M = np.dot(np.dot(sqrtY11, covY[:sel.sum(),sel.sum():]),sqrtY22)
-                V1,d,V2 = np.linalg.svd(M)
-                V1 = np.dot(sqrtY11, V1)
-                idx = np.argsort(d)
-                V1 = V1[:, idx]
-                W0_list.append(np.log(np.abs(V1[:,:zdims[0]])))
+
 
             else:
                 W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
@@ -148,11 +165,39 @@ class P_GPCCA(object):
         for kk in zdims:
             priorPar.append({'tau': np.random.rand(kk)*0.5})
 
-        stimPar = {
-            'W0': 0.01 * np.random.normal(size=(stimDim, zdims[0])),
-            'd' : stimMean,
-            'PsiInv': np.linalg.pinv(stimCov + np.eye(stimDim)*0.0001)
-        }
+
+        if use_cca_for_stim:
+            # use cca pars
+            # Y = np.vstack((np.sqrt(spikes), stim_all))
+            # covY = np.cov(Y)
+            # ee, U = np.linalg.eigh(covY[:spikes.shape[0], :spikes.shape[0]])
+            # ee = ee + 0.001
+            # sqrtY11_inv = np.linalg.inv(np.dot(np.dot(U, np.diag(np.sqrt(ee))),U.T))
+            # ee2, U2 = np.linalg.eigh(covY[spikes.shape[0]:, spikes.shape[0]:])
+            # ee2 = ee2 + 0.001
+            # sqrtY22_inv = np.linalg.inv(np.dot(np.dot(U2, np.diag(np.sqrt(ee2))),U2.T))
+            # M = np.dot(np.dot(sqrtY11_inv, covY[:spikes.shape[0], spikes.shape[0]:]), sqrtY22_inv)
+            # V1, d, V2 = np.linalg.svd(M)
+            # V2 = np.dot(sqrtY22_inv, V2)
+            # idx = np.argsort(d)
+            # V2 = V2[:,idx]
+            # V2 = V2[:, :zdims[0]]
+            model = CCA(n_components=min(stim_all.shape[0], spikes.shape[0]))
+            model.fit(np.sqrt(spikes[sel].T), stim_all.T)
+            V2 = model.y_rotations_[:,:zdims[0]]
+            stimPar = {
+                'W0': V2,
+                'd': stimMean,
+                'PsiInv': np.linalg.pinv(np.diag(np.diag(stimCov)) + np.eye(stimDim) * 0.0001)
+            }
+
+
+        else:
+            stimPar = {
+                    'W0': 0.01 * np.random.normal(size=(stimDim, zdims[0])),
+                    'd': stimMean,
+                    'PsiInv': np.linalg.pinv(stimCov + np.eye(stimDim) * 0.0001)
+                    }
 
         xParams = []
         for kk in range(len(xDims)):
