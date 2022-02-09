@@ -3,7 +3,7 @@ Implement a class that handles the input dataset conveniently.
 The class needs to store spikes and task variables, initialize parameters and select appropriately the data for the fits.
 """
 import numpy as np
-from data_processing_tools import emptyStruct
+from data_processing_tools import emptyStruct,gs
 from copy import deepcopy
 from sklearn.cross_decomposition import CCA
 
@@ -65,7 +65,7 @@ class P_GPCCA(object):
                 self.trialDur[tr] = self.preproc.data[tr]['Y'].shape[0]
 
 
-    def initializeParam(self, zdims, use_poissonPCA=False, use_cca_for_stim=True):
+    def initializeParam(self, zdims, use_poissonPCA=False, use_cca_for_stim=False, nonLin=lambda x:np.log(np.abs(x))):
         """
         Naive params initialization using random projection weights.
         :param zdims: list of the latent dimensions
@@ -114,30 +114,34 @@ class P_GPCCA(object):
             if use_poissonPCA:
 
                 # for CCA
-                model = CCA(n_components=min(stim_all.shape[0],sel.sum()))
-                model.fit(np.sqrt(spikes[sel].T), stim_all.T)
-                V1 = model.x_rotations_
-                # Y = np.vstack((spikes[sel], stim_all))
-                # covY = np.cov(Y)
-                # ee, U = np.linalg.eigh(covY[:sel.sum(), :sel.sum()])
-                # sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee+0.001))), U.T)
-                # ee2, U2 = np.linalg.eigh(covY[sel.sum():, sel.sum():])
-                # sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2+0.001))), U2.T)
-                # M = np.dot(np.dot(np.linalg.inv(sqrtY11), covY[:sel.sum(), sel.sum():]), np.linalg.inv(sqrtY22))
-                # V1, d, V2 = np.linalg.svd(M)
-                # V1 = np.dot(np.linalg.inv(sqrtY11), V1)
-                # idx = np.argsort(d)
-                #V1 = V1[:, idx]
-                # W0_list.append(np.log(np.abs(V1[:, :zdims[0]])))
-                W0_list.append(V1[:, :zdims[0]])
+                # model = CCA(n_components=min(stim_all.shape[0],sel.sum()))
+                # model.fit(np.sqrt(spikes[sel].T), stim_all.T)
+                # V1 = model.x_rotations_
+                Y = np.vstack((np.sqrt(spikes[sel]), stim_all))
+                covY = np.cov(Y)
+                ee, U = np.linalg.eigh(covY[:sel.sum(), :sel.sum()])
+                sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
+                ee2, U2 = np.linalg.eigh(covY[sel.sum():, sel.sum():])
+                sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
+                M = np.dot(np.dot(np.linalg.inv(sqrtY11), covY[:sel.sum(), sel.sum():]), np.linalg.inv(sqrtY22))
+                VV1, d, VV2 = np.linalg.svd(M)
+                # canonical directions
+                U = np.dot(np.linalg.inv(sqrtY11), VV1)
+                #V = np.dot(np.linalg.inv(sqrtY22), VV2.T)
+                # gram-schmidt orthonorm
+                UN = gs(U, row_vecs=False)
+
+                W0_list.append(nonLin(UN[:, :zdims[0]]))
 
 
                 # for PCA
+
                 ## look in orthogonal spaces
-                mn_spk = np.mean(spikes[sel], axis=1)
-                orth_dim = V1[:, zdims[0]:]
-                proj_in_orth_space = (np.dot(np.dot((spikes[sel].T - mn_spk), orth_dim),orth_dim.T) + mn_spk).T
-                covY = np.cov(proj_in_orth_space)
+
+                mn_spk = np.mean(np.sqrt(spikes[sel]), axis=1)
+
+                orth_compl = np.sqrt(spikes[sel]).T - np.dot(np.dot((np.sqrt(spikes[sel]).T - mn_spk), UN[:, :zdims[0]]), UN[:, :zdims[0]].T) + mn_spk
+                covY = np.cov(orth_compl.T)
                 ## no orth assumption
                 # covY = np.cov(spikes[sel])
 
@@ -323,47 +327,47 @@ class P_GPCCA(object):
 
 
 
-if __name__ == '__main__':
-    from inference import makeK_big
-    preproc = emptyStruct()
-    preproc.numTrials = 10
-    preproc.ydim = 50
-    preproc.binSize = 50
-
-    preproc.T = np.array([100]*preproc.numTrials)
-
-    preproc.covariates = {}
-    preproc.covariates['var1'] = []
-    preproc.covariates['var2'] = []
-    preproc.data = []
-    for k in range(preproc.numTrials):
-        tau = np.array([0.9, 0.2, 0.4])
-        K0 = 3
-        epsNoise = 0.000001
-        K_big = makeK_big(K0, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-        z = np.random.multivariate_normal(mean=np.zeros(K0*preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],K0)
-
-        # create the stim vars
-        PsiInv = np.eye(2)
-        W = np.random.normal(size=(2, K0))
-        d = np.zeros(2)
-
-        preproc.covariates['var1'] += [np.random.multivariate_normal(mean=np.dot(W,z.T)[0],cov=np.eye(preproc.T[0]))]
-        preproc.covariates['var2'] += [np.random.multivariate_normal(mean=np.dot(W,z.T)[1],cov=np.eye(preproc.T[0]))]
-
-
-        # create the counts
-        tau = np.array([1.1])
-        K_big = makeK_big(1, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-        z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],1)
-
-        W1 = np.random.normal(size=(preproc.ydim, 1))
-        W0 = np.random.normal(size=(preproc.ydim, 1))
-        d = -0.2
-        preproc.data += [{'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z) + np.einsum('ij,tj->ti', W1, z1) + d))}]
-
-
-    # create the data struct
-    struc = P_GPCCA(preproc,['var1','var2'],['PPC'],np.array(['PPC']*preproc.ydim),np.ones(preproc.ydim,dtype=bool))
-    struc.initializeParam([2,1])
-    a = struc.subSampleTrial(np.arange(2,5))
+# if __name__ == '__main__':
+#     from inference import makeK_big
+#     preproc = emptyStruct()
+#     preproc.numTrials = 10
+#     preproc.ydim = 50
+#     preproc.binSize = 50
+#
+#     preproc.T = np.array([100]*preproc.numTrials)
+#
+#     preproc.covariates = {}
+#     preproc.covariates['var1'] = []
+#     preproc.covariates['var2'] = []
+#     preproc.data = []
+#     for k in range(preproc.numTrials):
+#         tau = np.array([0.9, 0.2, 0.4])
+#         K0 = 3
+#         epsNoise = 0.000001
+#         K_big = makeK_big(K0, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+#         z = np.random.multivariate_normal(mean=np.zeros(K0*preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],K0)
+#
+#         # create the stim vars
+#         PsiInv = np.eye(2)
+#         W = np.random.normal(size=(2, K0))
+#         d = np.zeros(2)
+#
+#         preproc.covariates['var1'] += [np.random.multivariate_normal(mean=np.dot(W,z.T)[0],cov=np.eye(preproc.T[0]))]
+#         preproc.covariates['var2'] += [np.random.multivariate_normal(mean=np.dot(W,z.T)[1],cov=np.eye(preproc.T[0]))]
+#
+#
+#         # create the counts
+#         tau = np.array([1.1])
+#         K_big = makeK_big(1, tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
+#         z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0]),cov=K_big,size=1).reshape(preproc.T[0],1)
+#
+#         W1 = np.random.normal(size=(preproc.ydim, 1))
+#         W0 = np.random.normal(size=(preproc.ydim, 1))
+#         d = -0.2
+#         preproc.data += [{'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z) + np.einsum('ij,tj->ti', W1, z1) + d))}]
+#
+#
+#     # create the data struct
+#     struc = P_GPCCA(preproc,['var1','var2'],['PPC'],np.array(['PPC']*preproc.ydim),np.ones(preproc.ydim,dtype=bool))
+#     struc.initializeParam([2,1])
+#     a = struc.subSampleTrial(np.arange(2,5))

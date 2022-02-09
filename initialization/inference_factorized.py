@@ -55,7 +55,7 @@ def reconstruct_post_mean_and_cov(dat, zbar, index_dict):
             c0 += dat.zdims[j]
     return True
 
-def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx_sort=None):
+def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx_sort=None,useGauss=1):
     # extract latent init if zbar not given
     T = dat.trialDur[trNum]
     sumK = np.sum(dat.zdims)
@@ -87,7 +87,7 @@ def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx
 
 
     # compute log likelihood for the stimulus and the GP
-    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) - 0.5 * (zbar*zbar).sum()
+    logLike = useGauss*gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) - 0.5 * (zbar*zbar).sum()
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -161,7 +161,7 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
 def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
                             rev_idx_sort=None, indices=None, indptr=None, inverse=False,
-                            return_tensor=False):
+                            return_tensor=False,useGauss=1):
     # retrive data
     T = dat.trialDur[trNum]
     sumK = np.sum(dat.zdims)
@@ -198,11 +198,11 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
     if not inverse:
         H = np.zeros([T, sumK, sumK], dtype=float)
         H = H - np.eye(sumK)
-        H[:, :K0, :K0] = H[:, :K0, :K0] + hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
+        H[:, :K0, :K0] = H[:, :K0, :K0] + useGauss*hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
     else:
         inverseBlocks = []
         corssBlocks = []#np.zeros((K0,T*(sumK-K0)),dtype=np.float64)
-        A = hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True) - np.eye(K0)
+        A = useGauss * hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True) - np.eye(K0)
 
     for k in range(len(xList)):
         N, K = dat.xPar[k]['W1'].shape
@@ -297,7 +297,7 @@ def invertLoop(Binvs,Cs,As):
 
 
 def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, returnLL=False, inverse=True,
-                                      trialDur_variable=False):
+                                      trialDur_variable=False, useGauss=1):
     indices = None
     indptr = None
     idx_sort = None
@@ -335,19 +335,20 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
             zbar = post_mean[trNum]
         else:
             zbar = post_mean[tr_dict[trNum]]
-        LL += factorized_logLike(dat, trNum, stim, xList, zbar=zbar, idx_sort=idx_sort, rev_idx_sort=rev_idx_sort)
+        LL += factorized_logLike(dat, trNum, stim, xList, zbar=zbar, idx_sort=idx_sort, rev_idx_sort=rev_idx_sort, useGauss=useGauss)
         if returnLL:
             continue
         # t0 = perf_counter()
 
         hesInv, indices, indptr = hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar,
-                                                          inverse=inverse, indices=indicesMax[:T*sumK**2], indptr=indptrMax[:T*sumK+1])
+                                                          inverse=inverse, indices=indicesMax[:T*sumK**2], indptr=indptrMax[:T*sumK+1],
+                                                          useGauss=useGauss)
         # tt1 = perf_counter()
         grad[i0:i0 + dat.trialDur[trNum]*sumK], idx_sort, rev_idx_sort = grad_factorized_logLike(dat, trNum, stim,
                                                                                                      xList,
                                                                                                      zbar=zbar,
                                                                                                      idx_sort=idx_sort,
-                                                                    rev_idx_sort=rev_idx_sort, useGauss=1, usePoiss=1)
+                                                                    rev_idx_sort=rev_idx_sort, useGauss=useGauss, usePoiss=1)
         i0 += dat.trialDur[trNum]*sumK
 
         if first:
@@ -458,7 +459,7 @@ def trialByTrialInference(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_l
 
 
 def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=False,init_zeros=False,
-                     useNewton=True, trialDur_variable=False, randInit=False):
+                     useNewton=True, trialDur_variable=False, randInit=False,useGauss=1):
     eps_float = np.finfo(float).eps
     Z0, tr_dict = preproc_post_mean_factorizedModel(dat,returnDict=False)
     Z0 = (1-init_zeros)*Z0
@@ -468,7 +469,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=Fal
         n = 1
         while np.isinf(llabs):
             Z0 = 0.5**n * np.random.normal(size=Z0.shape)
-            llabs = np.abs(all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False, returnLL=True))
+            llabs = np.abs(all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False, returnLL=True,useGauss=useGauss))
             n += 1
     ii = 0
     delta_ll = np.inf
@@ -478,7 +479,8 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=Fal
     while ii < max_iter and delta_ll > tol:
 
         # t0 = perf_counter()
-        log_like, grad_ll, hess_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False,trialDur_variable=trialDur_variable)
+        log_like, grad_ll, hess_ll = all_trial_ll_grad_hess_factorized(dat, Z0, tr_dict=tr_dict, isDict=False,trialDur_variable=trialDur_variable,
+                                                                       useGauss=useGauss)
         if disp_ll:
             print('newton optim iter', ii, 'log-like', log_like)
         if useNewton:
@@ -494,8 +496,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=Fal
         while new_ll < log_like and step_halv < max_having:
 
             tmpZ = Z0 - step * delt.reshape(Z0.shape)
-            new_ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
-
+            new_ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True,useGauss=useGauss)
             delta_ll = new_ll - log_like
             #print('halving #%d, ' % step_halv, delta_ll)
             step = step / 2
@@ -504,7 +505,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=Fal
         # print('step halving time', perf_counter() - t0)
         if new_ll == -np.inf or (log_like - new_ll > np.sqrt(eps_float)):
             print(log_like - new_ll)
-            ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+            ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True,useGauss=useGauss)
             return Z0, False, tr_dict, ll, ll_hist
         ll_hist.append(new_ll)
         Z0 = tmpZ
@@ -514,7 +515,7 @@ def newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=30,disp_ll=Fal
         ii += 1
     # only criteria for convergence used
     flag_convergence = delta_ll <= tol
-    ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True)
+    ll = all_trial_ll_grad_hess_factorized(dat, tmpZ, tr_dict=tr_dict, isDict=False, returnLL=True,useGauss=useGauss)
     return Z0, flag_convergence, tr_dict, ll, ll_hist
 
 
@@ -618,8 +619,7 @@ if __name__ == '__main__':
     # ll, grad, hesInv = all_trial_ll_grad_hess_factorized(dat, post_mean)
 
     zmap,success,td,ll,ll_hist = newton_optim_map(dat, tol=10 ** -10, max_iter=100, max_having=20,
-                     indices=None, indptr=None,
-                     indices_up=None, indptr_up=None, disp_ll=True, init_zeros=True,useNewton=True)
+                      disp_ll=True, init_zeros=True,useNewton=True)
 
     dat2 = deepcopy(dat)
     reconstruct_post_mean_and_cov(dat2,zmap,td)
@@ -629,20 +629,20 @@ if __name__ == '__main__':
     for k in range(2):
         plt.subplot(2,2,k+cc)
         plt.title('Factorized: coord %d'%(k+1))
-        std_fact = np.sqrt(dat2.posterior_inf[2].cov_t[0][:, k, k])
-        p, = plt.plot(dat2.posterior_inf[2].mean[0][k])
-        plt.fill_between(np.arange(T), dat2.posterior_inf[2].mean[0][k] - 1.96 * std_fact,
-                         dat2.posterior_inf[2].mean[0][k] + 1.96 * std_fact, alpha=0.4, color=p.get_color())
-        plt.plot(dat.ground_truth_latent[2][:,k],color='k')
+        std_fact = np.sqrt(dat2.posterior_inf[1].cov_t[0][:, k, k])
+        p, = plt.plot(dat2.posterior_inf[1].mean[0][k])
+        plt.fill_between(np.arange(T), dat2.posterior_inf[1].mean[0][k] - 1.96 * std_fact,
+                         dat2.posterior_inf[1].mean[0][k] + 1.96 * std_fact, alpha=0.4, color=p.get_color())
+        plt.plot(dat.ground_truth_latent[1][:,k],color='k')
         cc+=1
 
         plt.subplot(2, 2, k + cc)
         plt.title('GP: coord %d' % (k + 1))
-        std_gp = np.sqrt(dat.posterior_inf[2].cov_t[0][:, k, k])
-        p, = plt.plot(dat.posterior_inf[2].mean[0][k])
-        plt.fill_between(np.arange(T), dat.posterior_inf[2].mean[0][k] - 1.96 * std_gp,
-                         dat.posterior_inf[2].mean[0][k] + 1.96 * std_gp, alpha=0.4, color=p.get_color())
-        plt.plot(dat.ground_truth_latent[2][:, k], color='k')
+        std_gp = np.sqrt(dat.posterior_inf[1].cov_t[0][:, k, k])
+        p, = plt.plot(dat.posterior_inf[1].mean[0][k])
+        plt.fill_between(np.arange(T), dat.posterior_inf[1].mean[0][k] - 1.96 * std_gp,
+                         dat.posterior_inf[1].mean[0][k] + 1.96 * std_gp, alpha=0.4, color=p.get_color())
+        plt.plot(dat.ground_truth_latent[1][:, k], color='k')
     plt.tight_layout()
 
     # func = lambda z0: -all_trial_ll_grad_hess_factorized(dat, z0, tr_dict=td, isDict=False, returnLL=True)

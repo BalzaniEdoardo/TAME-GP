@@ -149,7 +149,7 @@ def hess_poissonLogLike(x, z0, z1, W0, W1, d, return_blocks=False):
     return block_diag(*(-precision_z0)),block_diag(*(-precision_z1)),block_diag(*(-precision_z0z1))
 
 
-def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001):
+def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001,useGauss=1):
     # extract dim z0, stim and trial time
     K0 = stimPar['W0'].shape[1]
     tau0 = priorPar[0]['tau']
@@ -160,7 +160,7 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNois
     K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
 
     # compute log likelihood for the stimulus and the GP
-    logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
+    logLike = useGauss * gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -175,7 +175,7 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNois
     return logLike
 
 
-def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001):
+def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001,useGauss=1):
     # extract dim z0, stim and trial time
     K0 = stimPar['W0'].shape[1]
     tau0 = priorPar[0]['tau']
@@ -190,7 +190,7 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     grad_z0 = grad_GPLogLike(z0, K0_big_inv)
 
     grad_z0 = grad_z0.reshape(K0,T).T.flatten()
-    grad_z0 = grad_z0 + grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+    grad_z0 = grad_z0 + useGauss*grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
     grad_logLike[:T*K0] = grad_z0
 
     i0 = K0*T
@@ -208,7 +208,7 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
 
 
 
-def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001, usePrior=1):
+def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001, usePrior=1, useGauss=1):
     """
 
     :param zstack:
@@ -234,7 +234,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     hess_logLike = np.zeros([zstack.shape[0]]*2, dtype=float)
     hess_z0 = hess_GPLogLike(z0, K0_big_inv)
     idx_rot = np.tile(np.arange(0, K0*T, T), T) + np.arange(K0*T)//K0
-    hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + hess_gaussObsLogLike(stim,z0,stimPar['W0'],
+    hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + useGauss*hess_gaussObsLogLike(stim,z0,stimPar['W0'],
                                                                                      stimPar['d'],stimPar['PsiInv'])
     i0 = K0*T
     for k in range(len(xList)):
@@ -255,7 +255,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
         i0 += K * T
     return hess_logLike
 
-def inferTrial(data, trNum, zbar=None):
+def inferTrial(data, trNum, zbar=None, useGauss=1):
     """
     Laplace inference for an individual trial
     :param data: P_GPCCA
@@ -279,9 +279,9 @@ def inferTrial(data, trNum, zbar=None):
 
     # create the lambda function for the numerical MAP optimization
     func = lambda z: -PpCCA_logLike(z, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
-                  binSize=data.binSize, epsNoise=data.epsNoise)
+                  binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss)
     grad_fun = lambda z: -grad_PpCCA_logLike(z, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
-                  binSize=data.binSize, epsNoise=data.epsNoise)
+                  binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss)
 
     res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B')
     if not res.success:
@@ -294,7 +294,7 @@ def inferTrial(data, trNum, zbar=None):
 
     return zbar, laplAppCov
 
-def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False):
+def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1):
     """
     Laplace inference for all trials and store the result in the data structure.
     :param data: CCA_input_data
@@ -324,7 +324,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
 
         # set all the attributes related to trial as dictionaries
         T = data.trialDur[tr]
-        meanPost, covPost = inferTrial(data, tr, zbar=zbar)
+        meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss)
         if return_list_post:
             list_mean_post.append(meanPost)
             list_cov_post.append(covPost)
@@ -348,20 +348,20 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
 
 
 
-
-if __name__ == '__main__':
-
-    from gen_synthetic_data import *
-    T = 50
-    data = dataGen(5,T=T)
-    sub = data.cca_input.subSampleTrial(np.arange(1,4))
-    multiTrialInference(sub)
-    dat = data.cca_input
-    # test factorized
-    trNum = 1
-    stim, xList = dat.get_observations(trNum)
-    func = lambda zbar: factorized_logLike(dat,trNum,stim, xList, zbar=zbar)
-    grad_func = lambda zbar: grad_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)[0]
-    hess_func = lambda zbar: hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)
-
-
+#
+# if __name__ == '__main__':
+#
+#     from gen_synthetic_data import *
+#     T = 50
+#     data = dataGen(5,T=T)
+#     sub = data.cca_input.subSampleTrial(np.arange(1,4))
+#     multiTrialInference(sub)
+#     dat = data.cca_input
+#     # test factorized
+#     trNum = 1
+#     stim, xList = dat.get_observations(trNum)
+#     func = lambda zbar: factorized_logLike(dat,trNum,stim, xList, zbar=zbar)
+#     grad_func = lambda zbar: grad_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)[0]
+#     hess_func = lambda zbar: hess_factorized_logLike(dat, trNum, stim, xList, zbar=zbar)
+#
+#

@@ -203,7 +203,7 @@ class TestMStep(unittest.TestCase):
         W_opt = res.x[:K * N].reshape(N, K)
         err = np.abs(W_opt - data.stimPar['W0']).max()
         print('max error W0 estimation:',err)
-        self.assertLessEqual(err,10**-6)
+        self.assertLessEqual(err,2*10**-6)
 
 
     def test_PoissonMStep(self):
@@ -383,6 +383,8 @@ class TestMStep(unittest.TestCase):
                             tol=10 ** -12)
         t1 = perf_counter()
         print('BFGS %.5fsec'%(t1-t0))
+        err = np.abs(func(par_fit) - res_BFGS.fun)
+        self.assertLessEqual(err,10**-4)
 
 
 if __name__ == "__main__":
