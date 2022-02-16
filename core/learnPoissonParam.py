@@ -96,8 +96,24 @@ def grad_expectedLLPoisson(x, C, d, mean_post, cov_post, C1=None):
 #         f = f + func(x, C, d, meanPost, covPost, C1=C1)
 #
 #     return f
+def compileTrialStackedObsAndLatent(data, idx_latent, trial_list, T, xDim, K0, K1):
+    x = np.zeros((T, xDim))
+    mean_post = np.zeros((T, K0 + K1))
+    cov_post = np.zeros((T, K1 + K0, K1 + K0))
+    t0 = 0
+    for tr in trial_list:
+        T_tr = data.trialDur[tr]
+        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
+        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
+        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:], (0, 2, 1))
+        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
+        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
+        t0 += T_tr
+    return x, mean_post, cov_post
 
-def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False, trial_list=None, test=False):
+def multiTrial_PoissonLL(W0, W1, d, data, idx_latent, trial_num=None, isGrad=False, trial_list=None, test=False):
     """
 
     :param isGrad: True return the gradient, False returns the funcion evaluation
@@ -125,21 +141,7 @@ def multiTrial_PoissonLL(W0,W1,d, data, idx_latent, trial_num=None, isGrad=False
     for tr in trial_list:
         T += data.trialDur[tr] #np.sum(list(data.trialDur.values()))
 
-    x = np.zeros((T, xDim))
-    mean_post = np.zeros((T, K0+K1))
-    cov_post = np.zeros((T, K1+K0, K1+K0))
-    t0 = 0
-    for tr in trial_list:
-
-        T_tr = data.trialDur[tr]
-        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
-        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
-        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
-        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
-        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:],(0,2,1))
-        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
-        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
-        t0 += T_tr
+    x, mean_post, cov_post = compileTrialStackedObsAndLatent(data, idx_latent, trial_list, T, xDim, K0, K1)
 
     f = func(x, W0, d, mean_post, cov_post, C1=W1)/trial_num
     if test:
@@ -187,125 +189,8 @@ if __name__ == '__main__':
     import seaborn as sbn
     import matplotlib.pylab as plt
 
-    # np.random.seed(4)
-    #
-    # # create the input data
-    # preproc = emptyStruct()
-    # preproc.numTrials = 1
-    # preproc.ydim = 50
-    # preproc.binSize = 50
-    # preproc.T = np.array([50])
-    # tau0 = np.array([0.9])#np.array([0.9, 0.2, 0.4, 0.2, 0.8])
-    # K0 = len(tau0)
-    # epsNoise = 0.000001
-    # K_big = makeK_big(K0, tau0, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-    # z0 = np.random.multivariate_normal(mean=np.zeros(K0 * preproc.T[0]), cov=K_big, size=1).reshape(K0, preproc.T[0]).T
-    #
-    # # create the stim vars
-    # PsiInv = np.eye(2)
-    # W = np.random.normal(size=(2, K0))
-    # d = np.zeros(2)
-    # preproc.covariates = {}
-    # preproc.covariates['var1'] = [np.random.multivariate_normal(mean=np.dot(W, z0.T)[0], cov=np.eye(preproc.T[0]))]
-    # preproc.covariates['var2'] = [np.random.multivariate_normal(mean=np.dot(W, z0.T)[1], cov=np.eye(preproc.T[0]))]
-    # trueStimPar = {'W0': W, 'd': d, 'PsiInv': PsiInv}
-    #
-    # # create the counts
-    # tau = np.array([1.1, 1.3])
-    # K_big = makeK_big(len(tau), tau, None, preproc.binSize, epsNoise=epsNoise, T=preproc.T[0], computeInv=False)[1]
-    # z1 = np.random.multivariate_normal(mean=np.zeros(preproc.T[0] * len(tau)), cov=K_big, size=1).reshape(len(tau),
-    #                                                                                                       preproc.T[
-    #                                                                                                           0]).T
-    #
-    # W1 = np.random.normal(size=(preproc.ydim, len(tau)))
-    # W0 = np.random.normal(size=(preproc.ydim, K0))
-    # d = -0.2
-    # preproc.data = [
-    #     {'Y': np.random.poisson(lam=np.exp(np.einsum('ij,tj->ti', W0, z0) + np.einsum('ij,tj->ti', W1, z1) + d))}]
-    #
-    # # create the true observation par dict
-    # trueObsPar = [{
-    #     'W0': W0,
-    #     'W1': W1,
-    #     'd': np.ones(preproc.ydim) * d
-    # }]
-    #
-    # # true Prior params
-    # truePriorPar = [{'tau': tau0}, {'tau': tau}]
-    #
-    # # create the data struct
-    # struc = P_GPCCA(preproc, ['var1', 'var2'], ['PPC'], np.array(['PPC'] * preproc.ydim),
-    #                       np.ones(preproc.ydim, dtype=bool))
-    # struc.initializeParam([K0, z1.shape[1]])
-    # stim, xList = struc.get_observations(0)
-    # zstack = np.hstack((z0.flatten(), z1.flatten()))
-    #
-    # ## inference of the latent variables
-    # # set the pars to the true
-    # struc.xPar = trueObsPar
-    # struc.priorPar = truePriorPar
-    # struc.stimPar = trueStimPar
-    # struc.epsNoise = epsNoise
-    #
-    # # call the optimization function
-    # meanPost, covPost = inferTrial(struc, 0)
-    # mean_t, cov_t = retrive_t_blocks_fom_cov(struc, 0, 1, [meanPost], [covPost])
-    #
-    # PARStack = np.hstack((W1.flatten(), np.ones(preproc.ydim) * d))
-    # # Wsize =
-    # grad_fun = lambda xx: -grad_expectedLLPoisson(xList[0], xx[:np.prod(W1.shape)].reshape(W1.shape),
-    #                                                 xx[np.prod(W1.shape):], mean_t[:,K0:], cov_t[:,K0:,K0:])
-    #
-    # func = lambda xx: -expectedLLPoisson(xList[0], xx[:np.prod(W1.shape)].reshape(W1.shape),
-    #                                                 xx[np.prod(W1.shape):], mean_t[:, K0:], cov_t[:, K0:, K0:])
-    #
-    # print('first optimization')
-    # res = minimize(func,np.zeros(PARStack.shape[0]),jac=grad_fun)
-    # app_grad1 = approx_grad(PARStack,PARStack.shape[0],func,10**-4)
-    #
-    #
-    # # repeat with 2 factors
-    # PARStack2 = np.hstack((W0.flatten(), W1.flatten(), np.ones(preproc.ydim) * d))
-    # # Wsize =
-    # grad_fun2 = lambda xx: -grad_expectedLLPoisson(xList[0], xx[:np.prod(W0.shape)].reshape(W0.shape),
-    #                                      xx[np.prod(W0.shape)+np.prod(W1.shape):], mean_t, cov_t,
-    #                                      C1=xx[np.prod(W0.shape):np.prod(W0.shape)+np.prod(W1.shape)].reshape(W1.shape))
-    #
-    # func2 = lambda xx: -expectedLLPoisson(xList[0], xx[:np.prod(W0.shape)].reshape(W0.shape),
-    #                                      xx[np.prod(W0.shape)+np.prod(W1.shape):], mean_t, cov_t,
-    #                                      C1=xx[np.prod(W0.shape):np.prod(W0.shape)+np.prod(W1.shape)].reshape(W1.shape))
-    #
-    # print('second optimization')
-    # res2 = minimize(func2, np.zeros(PARStack2.shape[0]), jac=grad_fun2)
-    #
-    # if preproc.T[0] >= 500:
-    #     plt.figure(figsize=[6.4 , 3.54])
-    #     plt.title('M-step Poisson Observation')
-    #     plt.plot(PARStack2,label='true parameter')
-    #     plt.plot(res2.x,label='recovered parameter')
-    #     plt.ylabel('parameter palue')
-    #     plt.xlabel('parameter index')
-    #     plt.legend()
-    #     plt.tight_layout()
-    #     plt.savefig('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/M_step_poisson.jpg')
-    #
-    # app_grad = approx_grad(PARStack2,PARStack2.shape[0],func2,10**-5)
-    # grad = grad_fun2(PARStack2)
-    #
-    # Wnew, dnew, PsiNew = MStepGauss()
-    # # plt.figure()
-    # # plt.subplot(121)
-    # # plt.scatter(app_grad1, grad_fun(PARStack))
-    # # plt.subplot(122)
-    # # plt.scatter(app_grad,grad_fun2(PARStack2))
-    # # print('GRADIENT NOT WORKING! fix')
-
     dat = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy', allow_pickle=True).all()
-    # dat.cca_input = dat.cca_input.subSampleTrial(np.arange(1, 4))
-    # multiTrialInference(dat.cca_input)
 
-    # f = multiTrial_PoissonLL(dat.cca_input, 1, trial_num = 3, isGrad = False)
-    # gr_f = multiTrial_PoissonLL(dat.cca_input, 1, trial_num=3, isGrad=True)
     # extract initial par values
     idx_latent = 1
     C = dat.xPar[idx_latent - 1]['W0']

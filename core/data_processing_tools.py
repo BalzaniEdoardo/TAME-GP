@@ -72,6 +72,9 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
         K_big[ii:ii+T.shape[0], ii:ii+T.shape[0]] = K[xd]
 
         if computeInv:
+            # eig = np.linalg.eigh(K[xd])[0]
+            # if any(np.isnan(eig)):
+            #     xxx=1
             Kinv = np.linalg.inv(K[xd])
             logdet_K = logDetCompute(K[xd])
             K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv
@@ -229,42 +232,5 @@ def approx_grad(x0, dim, func, epsi):
     return grad
 
 if __name__ == '__main__':
-    from time import perf_counter
     from gen_synthetic_data import dataGen
-    import seaborn as sbn
-    import matplotlib.pylab as plt
-
-    # zdim = [2]+[10]*5
-    # T = 60
-    # B = np.zeros((np.sum(zdim)*T, np.sum(zdim)*T))
-    #
-    # ii = 0
-    # for k in range(len(zdim)):
-    #     AA = np.random.normal(size=(zdim[k]*T, zdim[k]*T))
-    #     AA = np.dot(AA, AA.T)
-    #     B[ii: ii + zdim[k]*T, ii: ii + zdim[k]*T] = AA
-    #     ii += zdim[k]*T
-    #
-    # ii = zdim[0]*T
-    # for k in range(1,len(zdim)):
-    #     AA = np.random.normal(size=(zdim[0]*T,zdim[k]*T))
-    #     B[: zdim[0]*T, ii: ii + zdim[k]*T] = AA
-    #     B[ii: ii + zdim[k]*T, :zdim[0]*T] = AA.T
-    #     ii += zdim[k]*T
-    #
-    # # t0 = perf_counter()
-    # # Binv = np.linalg.inv(B)
-    # # t1 = perf_counter()
-    # # print(t1 - t0)
-    # tt0 = perf_counter()
-    # Binv2 = invertHessBlock(B, zdim, T)
-    # tt1 = perf_counter()
-    # print(tt1-tt0)
-    # # print((t1-t0)/(tt1-tt0))
-    #
-    # # gen syntetic data
     dat = dataGen(1)
-
-
-    # invertHessBlock(precision, dat.cca_input.zdims, dat.cca_input.trialDur[0])
-    # mn,cov,crcov = parse_fullCov(dat.cca_input, dat.meanPost[0], dat.covPost[0],dat.cca_input.trialDur[0])

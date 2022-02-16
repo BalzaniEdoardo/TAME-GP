@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 from data_processing_tools import makeK_big
 
@@ -159,9 +161,17 @@ def all_trial_GPLL(lam, data, idx_latent, block_trials=None, isGrad=False):
             Tmax = max(Tmax,data.posterior_inf[tr].mean[idx_latent].shape[1])
             mu_list.append(data.posterior_inf[tr].mean[idx_latent])
             cov_list.append(data.posterior_inf[tr].cov_k[idx_latent])
-
-        f = f + allTrial_grad_expectedLLGPPrior(lam , mu_list, cov_list, data.binSize,
+            try:
+                f = f + allTrial_grad_expectedLLGPPrior(lam , mu_list, cov_list, data.binSize,
                                                 eps=data.epsNoise,Tmax=Tmax,isGrad=isGrad, trial_num=trial_num)
+            except np.linalg.LinAlgError:
+                if isGrad:
+                    return -np.ones(lam.shape)*np.inf
+                else:
+                    return -np.inf
+
+    # if isGrad:
+    #     print( np.linalg.norm(f))
     return f
 
 
@@ -170,39 +180,17 @@ if __name__=='__main__':
     import matplotlib.pylab as plt
     from scipy.optimize import minimize
 
-    # dat = dataGen(150,T=50)
-    # eps = dat.cca_input.epsNoise
-    # lam_0 = 2*np.log(
-    #     ((dat.cca_input.priorPar[1]['tau']*dat.cca_input.binSize/1000))
-    #                )
-    #
-    # mu_list = []
-    # cov_list = []
-    # for k in range(len(dat.cca_input.trialDur)):
-    #     m,s = parse_fullCov_latDim(dat.cca_input, dat.meanPost[k], dat.covPost[k], dat.cca_input.trialDur[k])
-    #     mu_list.append(m[1])
-    #     cov_list.append(s[1])
-    #
-    #
-    # func = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list, dat.cca_input.binSize,eps,
-    #                                               max(dat.cca_input.trialDur), isGrad=False)
-    # func_grad = lambda lam_0: -allTrial_grad_expectedLLGPPrior(lam_0, mu_list, cov_list, dat.cca_input.binSize,eps,
-    #                                               max(dat.cca_input.trialDur)+1, isGrad=True)
-    # res = minimize(func, np.zeros(len(lam_0)), jac=func_grad, method='L-BFGS-B',tol=10**-10)
-    #
-    #
-    # tau_from_lam = lambda lam: np.exp(lam/2)*1000/dat.cca_input.binSize
     idx_latent = 1
-    data = np.load('/Users/edoardo/Work/Code/P-GPCCA/inference_syntetic_data/sim_150Trials.npy',allow_pickle=True).all()
+    if os.path.exists('../inference_syntetic_data/sim_150Trials.npy'):
+        data = np.load('../inference_syntetic_data/sim_150Trials.npy',allow_pickle=True).all()
+    else:
+        data = dataGen(10,T=50).cca_input
     np.random.rand(4)
     tau = np.random.uniform(0.2,1.2,size=data.priorPar[idx_latent]['tau'].shape[0])
     tau=np.array([0.61061895, 0.2510141, 0.57811751, 0.85722733, 0.5862096])
     lam0 = 2 * np.log(((tau * data.binSize/1000)))
-
     f = all_trial_GPLL(lam0, data, idx_latent, block_trials=40, isGrad=False)
     g = all_trial_GPLL(lam0, data, idx_latent, block_trials=40, isGrad=True)
     func = lambda lam0: -all_trial_GPLL(lam0, data, idx_latent, block_trials=1, isGrad=False)
-    # ap_grad = -approx_grad(lam0,len(lam0),func,10**-5)
     gr_func = lambda lam0: -all_trial_GPLL(lam0, data, idx_latent, block_trials=1, isGrad=True)
-    # res = minimize(func,lam0,jac=gr_func,method='L-BFGS-B')
-    # tau_new = np.exp(res.x/2)*1000/data.binSize
+
