@@ -13,8 +13,11 @@ print(basedir)
 
 # requires matlab, with the matlab api for python installed and bads package from Luigi Acerbi
 # https://github.com/lacerbi/bads
-sys.path.append(os.path.join(basedir,'bads_optim'))
-from badsOptim import badsOptim
+try:
+    sys.path.append(os.path.join(basedir,'bads_optim'))
+    from badsOptim import badsOptim
+except:
+    badsOptim=None
 
 def computeLL(data):
     llgauss = full_GaussLL(data)
