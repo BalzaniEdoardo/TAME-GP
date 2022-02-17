@@ -145,6 +145,7 @@ def expectation_maximization_factorized(data, maxIter=10, tol=10 ** -8,
 
     # initialize expected LL list
     LL_list = []
+    map_list = []
 
     # start the EM
     for ii in range(maxIter):
@@ -157,11 +158,13 @@ def expectation_maximization_factorized(data, maxIter=10, tol=10 ** -8,
                                                               disp_ll=True, init_zeros=True, useNewton=useNewton,
                                                               trialDur_variable=trialDur_variable)
             reconstruct_post_mean_and_cov(data, zmap, td)
+            map_list.append(ll)
 
 
         elif trial_block < len(data.trialDur.keys()):
             tr_list = list(data.trialDur.keys())
             Z0, tr_dict = preproc_post_mean_factorizedModel(data, returnDict=False)
+            ll_all = 0
             for k in range(0, len(tr_list), trial_block):
                 print('trial block: [%d, %d]'%(k,min(k+trial_block,len(tr_list))))
                 trs = tr_list[k:k+trial_block]
@@ -169,17 +172,19 @@ def expectation_maximization_factorized(data, maxIter=10, tol=10 ** -8,
                 zmap, success, td, ll, ll_hist = newton_optim_map(sub_data, tol=10 ** -10, max_iter=100, max_having=30,
                                                                   disp_ll=True, init_zeros=True, useNewton=useNewton,
                                                                   trialDur_variable=trialDur_variable)
+                ll_all += ll
                 # store the results
                 for tr in trs:
                     Z0[tr_dict[tr]] = zmap[td[tr]]
             #recompute the map
             reconstruct_post_mean_and_cov(data, Z0, tr_dict)
 
-
+            map_list.append(ll_all)
         else:
             zmap, success, td, ll, ll_hist = newton_optim_map(data, tol=10 ** -10, max_iter=100, max_having=20,
                                                           disp_ll=True, init_zeros=True, useNewton=useNewton,
                                                               trialDur_variable=trialDur_variable)
+            map_list.append(ll)
             # reconstruct the usual posterior structure and store
             reconstruct_post_mean_and_cov(data, zmap, td)
 
@@ -291,13 +296,14 @@ def expectation_maximization_factorized(data, maxIter=10, tol=10 ** -8,
     zmap, success, td, ll, ll_hist = newton_optim_map(data, tol=10 ** -10, max_iter=100, max_having=20,
                                                       disp_ll=True, init_zeros=True, useNewton=True,
                                                       trialDur_variable=trialDur_variable)
+    map_list.append(ll)
     # reconstruct the usual posterior structure and store
     reconstruct_post_mean_and_cov(data, zmap, td)
 
 
     LL = computeLL_factorized(data)[0]
     data.ll_iter.append([LL])
-    return LL_list
+    return LL_list,map_list
 
 
 if __name__ == '__main__':

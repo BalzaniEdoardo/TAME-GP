@@ -314,6 +314,7 @@ def all_trial_ll_grad_hess_factorized(dat, post_mean, tr_dict={}, isDict=True, r
     indptrMax = np.zeros(tmax*sumK+1,dtype=np.int32)
 
     for trNum in dat.trialDur.keys():
+        #print('TRIAL NUM',trNum)
         stim, xList = dat.get_observations(trNum)
         # print('tr %d'%trNum)
         if trialDur_variable:

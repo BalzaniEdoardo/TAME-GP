@@ -1,5 +1,6 @@
 *.sh
 inference_syntetic_data/*
+fit_cluster/*
 *.mat
 firefly_utils/*
 *.npy

@@ -52,10 +52,25 @@ class P_GPCCA(object):
                     data[tr] = {'Y':tmp}
 
             cov = {}
-            for var in self.preproc.covariates.keys():
+            non_nan_trial = {}
+            for var in var_list:
                 cov[var] = {}
+                if var == var_list[0]:
+                    for tr in range(self.preproc.numTrials):
+                        non_nan_trial[tr] = np.ones(self.trialDur[tr], dtype=bool)
+
                 for tr in range(self.preproc.numTrials):
                     cov[var][tr] = self.preproc.covariates[var][tr]
+                    non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
+
+            # remove nan
+            for tr in range(self.preproc.numTrials):
+                data[tr]['Y'] = data[tr]['Y'][non_nan_trial[tr],:]
+                self.trialDur[tr] = np.sum(non_nan_trial[tr])
+                for var in var_list:
+                    cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
+
+
             self.preproc.data = data
             self.preproc.T = deepcopy(self.trialDur)
             self.preproc.covariates = cov
@@ -87,6 +102,9 @@ class P_GPCCA(object):
                 trStim[cc] = self.preproc.covariates[var][tr]
                 cc += 1
             stimCov = stimCov + np.cov(trStim)/self.preproc.numTrials
+            if np.sum(np.isnan(np.cov(trStim))):
+                print('nan found',tr)
+                xxx=1
 
         # extract all spikes
         spikes = np.zeros([self.preproc.ydim, np.sum(list(self.trialDur.values()))])
