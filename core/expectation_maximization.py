@@ -98,7 +98,7 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
         print('EM iteration: %d/%d'%(ii+1,maxIter))
         # infer latent
         print('- E-step')
-        multiTrialInference(data)
+        multiTrialInference(data,plot_trial=True)
         if ii == 0:
             print('initial LL:', computeLL(data)[0],'\n')
         # learn gaussian params
