@@ -283,6 +283,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1):
     grad_fun = lambda z: -grad_PpCCA_logLike(z, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
                   binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss)
     #dispFlag = (trNum == 706) or (trNum == 514)
+    dispFlag = False
     res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp':dispFlag})
     if not res.success:
         print('unable to find MAP for trial', trNum)
