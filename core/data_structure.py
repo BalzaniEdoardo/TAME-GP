@@ -64,16 +64,32 @@ class P_GPCCA(object):
                     non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
 
             # remove nan
+            rm_trials = []
             for tr in range(self.preproc.numTrials):
                 data[tr]['Y'] = data[tr]['Y'][non_nan_trial[tr],:]
-                self.trialDur[tr] = np.sum(non_nan_trial[tr])
-                for var in var_list:
-                    cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
 
+                self.trialDur[tr] = np.sum(non_nan_trial[tr])
+                if self.trialDur[tr] < 5:
+                    rm_trials.append(tr)
+                for var in var_list:
+                    try:
+                        cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
+                    except:
+                        rm_trials += [tr]
+
+            for tr in np.unique(rm_trials):
+                data.pop(tr)
+                self.trialDur.pop(tr)
+                for var in var_list:
+                    try:
+                        cov[var][tr].pop(tr)
+                    except:
+                        pass
 
             self.preproc.data = data
             self.preproc.T = deepcopy(self.trialDur)
             self.preproc.covariates = cov
+            self.preproc.numTrials = len(self.trialDur.keys())
         else:
             self.trialDur = {}
             for tr in self.preproc.data.keys():

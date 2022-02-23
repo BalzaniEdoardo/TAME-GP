@@ -290,7 +290,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1):
 
     zbar = res.x
     precision = -(hess_PpCCA_logLike(zbar, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
-                  binSize=data.binSize, epsNoise=data.epsNoise))
+                  binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss))
     laplAppCov = invertHessBlock(precision, data.zdims, data.trialDur[trNum])
 
     return zbar, laplAppCov
@@ -325,6 +325,8 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
 
         # set all the attributes related to trial as dictionaries
         T = data.trialDur[tr]
+        if tr == 701:
+            xxxx = 1
         meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss)
         if return_list_post:
             list_mean_post.append(meanPost)
