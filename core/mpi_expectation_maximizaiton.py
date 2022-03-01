@@ -14,11 +14,15 @@ from time import perf_counter
 
 # input file name
 
-fh_name = '../fit_cluster/sim_static_stim.npz'
-save_path = '../fit_cluster/%s'%sys.argv[1]#'../fit_cluster/test.npz'#
-iter_save = '../fit_cluster/iter_fit_%s.txt'%sys.argv[2]
+# fh_name = '../fit_cluster/sim_static_stim.npz'
+# save_path = '../fit_cluster/%s'%sys.argv[1]
+# iter_save = '../fit_cluster/iter_fit_%s.txt'%sys.argv[2]
 
-maxIter = 100
+fh_name = '../fit_cluster/%s'%sys.argv[1]
+save_path = '../fit_cluster/%s'%sys.argv[2]
+iter_save = '../fit_cluster/iter_fit_%s.txt'%sys.argv[3]
+maxIter = int(sys.argv[4])
+
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
@@ -92,6 +96,10 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
         data.posterior_inf = post_inf
         del posterior_list
         print('stored newly inferred trials')
+
+        if ii % save_every == 0:
+            iteration =  ii + 1
+            np.savez(save_path, data_cca = data, iteration=iteration)
 
         if ii == 0:
             print('initial LL:', computeLL(data)[0], '\n')
@@ -205,9 +213,6 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
 
         LL_list.append(-nLL)
         print('current LL: ', LL_list[-1])
-        if ii % save_every == 0:
-            iteration =  ii + 1
-            np.savez(save_path, data_cca = data, iteration=iteration)
 
         if ii == 0:
             continue
@@ -248,6 +253,8 @@ if rank == 0:
         fh.write(string)
         fh.close()
 
+
+
 else:
     tr_dict = {}
     data_cca = {}
@@ -259,28 +266,63 @@ data_cca = comm.bcast(data_cca, root=0)
 if rank != 0:
     # for the workers, just keep the trial needed for the optimizatin
     data_cca = data_cca.subSampleTrial(tr_dict[rank])
-    while True:
-        interrupt = comm.bcast(interrupt, root=0)
-        if interrupt:
-            break
-        # wait for the parameter update
-        data_cca.xPar = comm.bcast(data_cca.xPar, root=0)
-        data_cca.stimPar = comm.bcast(data_cca.stimPar, root=0)
-        data_cca.priorPar = comm.bcast(data_cca.priorPar, root=0)
+    if maxIter > 0:
+        while True:
+            interrupt = comm.bcast(interrupt, root=0)
+            if interrupt:
+                break
+            # wait for the parameter update
+            data_cca.xPar = comm.bcast(data_cca.xPar, root=0)
+            data_cca.stimPar = comm.bcast(data_cca.stimPar, root=0)
+            data_cca.priorPar = comm.bcast(data_cca.priorPar, root=0)
 
-        # infer trials
-        print('infer worker %d - start'%rank)
-        multiTrialInference(data_cca, trial_list = tr_dict[rank])
-        print('infer worker %d - end'%rank)
-        posterior_list = comm.gather(data_cca.posterior_inf, root=0)
+            # infer trials
+            print('infer worker %d - start'%rank)
+            multiTrialInference(data_cca, trial_list = tr_dict[rank])
+            print('infer worker %d - end'%rank)
+            posterior_list = comm.gather(data_cca.posterior_inf, root=0)
+
+    # wait for the parameter update
+    data_cca.xPar = comm.bcast(data_cca.xPar, root=0)
+    data_cca.stimPar = comm.bcast(data_cca.stimPar, root=0)
+    data_cca.priorPar = comm.bcast(data_cca.priorPar, root=0)
+    multiTrialInference(data_cca, trial_list=tr_dict[rank],useGauss=0)
+    posterior_list = comm.gather(data_cca.posterior_inf, root=0)
+
+
 
 else:
-    ll = mpi_em(data_cca, tr_dict, maxIter=maxIter, tol=10 ** -3, method='sparse-Newton', tolPoissonOpt=10 ** -12,
+    if maxIter > 0:
+        ll = mpi_em(data_cca, tr_dict, maxIter=maxIter, tol=10 ** -3, method='sparse-Newton', tolPoissonOpt=10 ** -12,
            boundsW0=None, boundsW1=None, boundsD=None,save_every=1,save_path=save_path,iter_save=iter_save)
+
+    # wait for the parameter update
+    data_cca.xPar = comm.bcast(data_cca.xPar, root=0)
+    data_cca.stimPar = comm.bcast(data_cca.stimPar, root=0)
+    data_cca.priorPar = comm.bcast(data_cca.priorPar, root=0)
+    data_noStim = deepcopy(data_cca)
+
+    if hasattr(data_noStim, 'posterior_inf'):
+        print('Clearing non-root inferred trial before E-step')
+        lst_pop = []
+        for tr in data_noStim.posterior_inf.keys():
+            if not tr in tr_dict[0]:
+                lst_pop.append(tr)
+        for tr in lst_pop:
+            data_noStim.posterior_inf.pop(tr)
+
+    # final inference with no stimulus
+    multiTrialInference(data_noStim, trial_list=tr_dict[rank], useGauss=0)
+    posterior_list = comm.gather(data_noStim.posterior_inf, root=0)
+
     #np.savez('%d_fit_1iter.npz'%size,data_cca = data_cca)
 
-
-
+    post_inf = {}
+    for pst in posterior_list:
+        for tr in pst.keys():
+            post_inf[tr] = pst[tr]
+    data_cca.posterior_inf_noStim = post_inf
+    np.savez(save_path, data_cca=data_cca, iteration=maxIter)
 
 
 
