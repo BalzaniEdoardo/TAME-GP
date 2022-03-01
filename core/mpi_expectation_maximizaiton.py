@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from expectation_maximization import computeLL
 import sys,os
 import inspect
+from time import perf_counter
 
 # input file name
 
@@ -47,7 +48,9 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
         comm.bcast(False, root=0)
         print('EM iteration: %d/%d' % (ii + 1, maxIter))
         # infer latent
+
         print('- E-step - using workers')
+        t0 = perf_counter()
         # broadcast model params
         comm.bcast(data.xPar, root=0)
         comm.bcast(data.stimPar, root=0)
@@ -69,10 +72,12 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
             fh.write('infer root 0 - start\n')
             fh.close()
         multiTrialInference(data, trial_list=trial_dict[0], plot_trial=True)
+        t1 = perf_counter()
         print('infer root 0 - end')
         with open(iter_save, 'a') as fh:
-            fh.write('infer root 0 - end\n')
+            fh.write('infer root 0 - end\ntot time: %f sec\n'%(t1-t0))
             fh.close()
+
 
         # gather all the other inf results
 
@@ -92,10 +97,16 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
             print('initial LL:', computeLL(data)[0], '\n')
         # learn gaussian params
         print('- Gaussian M-step')
+        t0 = perf_counter()
         learn_GaussianParams(data, test=False, isMPI=False)
+        t1 = perf_counter()
+        with open(iter_save, 'a') as fh:
+            fh.write('Gauss M-Step tot time: %f sec\n'%(t1-t0))
+            fh.close()
         nLL = -full_GaussLL(data)
 
         # learn Poisson obs param
+        t0 = perf_counter()
         for k in range(len(data.zdims) - 1):
             if method == 'L-BFGS-B':
                 # extract parameters
@@ -165,7 +176,12 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                 data.xPar[k]['d'] = par_optim[N * (K0 + K1):]
                 nLL += feval / len(data.trialDur.keys())
 
+        t1 = perf_counter()
+        with open(iter_save, 'a') as fh:
+            fh.write('Poisson M-Step tot time: %f sec\n' % (t1 - t0))
+            fh.close()
         # learn GP param
+        t0 = perf_counter()
         for k in range(len(data.zdims)):
             tau = data.priorPar[k]['tau']
 
@@ -181,6 +197,11 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                 print('nLL prior before/after optim:', f0, res.fun)
             else:
                 nLL += func(lam0)
+
+        t1 = perf_counter()
+        with open(iter_save, 'a') as fh:
+            fh.write('GP M-Step tot time: %f sec\n' % (t1 - t0))
+            fh.close()
 
         LL_list.append(-nLL)
         print('current LL: ', LL_list[-1])
@@ -208,7 +229,7 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
 if rank == 0:
     ## load data
     data_cca = np.load(fh_name, allow_pickle=True)['data_cca'].all()
-    #data_cca = data_cca.subSampleTrial(np.arange(0,600,30))
+    #data_cca = data_cca.subSampleTrial(np.arange(0,600,60))
 
     all_trials = np.array(list(data_cca.trialDur.keys()))
     trial_x_proc = all_trials.shape[0] // size
