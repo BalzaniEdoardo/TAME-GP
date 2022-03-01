@@ -222,7 +222,13 @@ class P_GPCCA(object):
             # V2 = V2[:, :zdims[0]]
             model = CCA(n_components=min(stim_all.shape[0], spikes.shape[0]))
             model.fit(np.sqrt(spikes[sel].T), stim_all.T)
-            V2 = model.y_rotations_[:,:zdims[0]]
+            if model.y_rotations_.shape[0] >= zdims[0]:
+                V2 = model.y_rotations_[:,:zdims[0]]
+            else:
+                VV = model.y_rotations_
+                V2 = 0.1 * np.random.normal(size=(VV.shape[0],zdims[0]))
+                V2[:, :VV.shape[1]] = VV
+
             stimPar = {
                 'W0': V2,
                 'd': stimMean,
