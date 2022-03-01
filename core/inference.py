@@ -310,9 +310,11 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         list_cov_post = []
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
+    cnt = 1
     for tr in trial_list:
         if plot_trial:
-            print('infer trial: %d/%d'%(tr,len(data.trialDur.keys())))
+            print('infer trial: %d/%d'%(cnt,len(trial_list)))
+        cnt += 1
         if tr not in data.posterior_inf.keys():
             zbar = None
         else:
