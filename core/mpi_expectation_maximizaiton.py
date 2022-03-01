@@ -65,8 +65,14 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                 data.posterior_inf.pop(tr)
 
         print('infer root 0 - start')
+        with open(iter_save, 'a') as fh:
+            fh.write('infer root 0 - start\n')
+            fh.close()
         multiTrialInference(data, trial_list=trial_dict[0], plot_trial=True)
         print('infer root 0 - end')
+        with open(iter_save, 'a') as fh:
+            fh.write('infer root 0 - end\n')
+            fh.close()
 
         # gather all the other inf results
 
@@ -213,8 +219,13 @@ if rank == 0:
         tr_dict[idx] = all_trials[np.arange(i0, i0 + trial_x_proc)]
         i0 += trial_x_proc
     tr_dict[idx + 1] = all_trials[np.arange(i0, (all_trials).shape[0])]
+    string = ''
     for k in tr_dict.keys():
         print(k, tr_dict[k])
+        string += '%d - %s\n'%(k,str(tr_dict[k]))
+    with open(iter_save, 'a') as fh:
+        fh.write(string)
+        fh.close()
 
 else:
     tr_dict = {}
