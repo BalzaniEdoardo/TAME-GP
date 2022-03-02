@@ -238,14 +238,14 @@ if rank == 0:
     data_cca = np.load(fh_name, allow_pickle=True)['data_cca'].all()
     #data_cca = data_cca.subSampleTrial(np.arange(0,600,60))
     all_trials = np.array(list(data_cca.trialDur.keys()))
-    trial_x_proc = all_trials.shape[0] // size
+    trial_x_proc = all_trials.shape[0] // size + 1
     tr_dict = {}
     i0 = 0
     idx = -1
     for idx in range(size-1):
         tr_dict[idx] = all_trials[np.arange(i0, i0 + trial_x_proc)]
         i0 += trial_x_proc
-    tr_dict[idx + 1] = all_trials[np.arange(i0, (all_trials).shape[0])]
+    tr_dict[idx + 1] = all_trials[i0:]
     string = ''
     for k in tr_dict.keys():
         print(k, tr_dict[k])
