@@ -11,7 +11,8 @@ from expectation_maximization import computeLL
 import sys,os
 import inspect
 from time import perf_counter
-
+sys.path.append('../initialization/')
+from expectation_maximization_factorized import expectation_maximization_factorized
 # input file name
 
 # fh_name = '../fit_cluster/sim_static_stim.npz'
@@ -233,9 +234,9 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
 
 if rank == 0:
     ## load data
+
     data_cca = np.load(fh_name, allow_pickle=True)['data_cca'].all()
     #data_cca = data_cca.subSampleTrial(np.arange(0,600,60))
-
     all_trials = np.array(list(data_cca.trialDur.keys()))
     trial_x_proc = all_trials.shape[0] // size
     tr_dict = {}
@@ -264,7 +265,10 @@ tr_dict = comm.bcast(tr_dict, root=0)
 data_cca = comm.bcast(data_cca, root=0)
 
 if rank != 0:
-    # for the workers, just keep the trial needed for the optimizatin
+    # for the workers, just keep the trial needed for the optimization
+
+
+
     data_cca = data_cca.subSampleTrial(tr_dict[rank])
     if maxIter > 0:
         while True:
@@ -292,6 +296,16 @@ if rank != 0:
 
 
 else:
+    t0 = perf_counter()
+    with open(iter_save, 'a') as fh:
+        fh.write('Factorized EM start\n')
+        fh.close()
+    expectation_maximization_factorized(data_cca, maxIter=20, trialDur_variable=True,
+                                        trial_block=len(data_cca.trialDur.keys()), useNewton=True)
+    t1 = perf_counter()
+    with open(iter_save, 'a') as fh:
+        fh.write('Factorized EM end\ntot time: %f sec\n' % (t1 - t0))
+        fh.close()
     if maxIter > 0:
         ll = mpi_em(data_cca, tr_dict, maxIter=maxIter, tol=10 ** -3, method='sparse-Newton', tolPoissonOpt=10 ** -12,
            boundsW0=None, boundsW1=None, boundsD=None,save_every=1,save_path=save_path,iter_save=iter_save)
