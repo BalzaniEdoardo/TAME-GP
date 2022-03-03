@@ -210,6 +210,8 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
         t1 = perf_counter()
         with open(iter_save, 'a') as fh:
             fh.write('GP M-Step tot time: %f sec\n' % (t1 - t0))
+            fh.write('GP pars: %s\n' % (str(data.priorPar)))
+
             fh.close()
 
         LL_list.append(-nLL)
