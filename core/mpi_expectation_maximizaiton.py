@@ -300,7 +300,8 @@ else:
     with open(iter_save, 'a') as fh:
         fh.write('Factorized EM start\n')
         fh.close()
-    expectation_maximization_factorized(data_cca, maxIter=20, trialDur_variable=True,
+    if not hasattr(data_cca, 'posterior_inf'):
+        expectation_maximization_factorized(data_cca, maxIter=20, trialDur_variable=True,
                                         trial_block=len(data_cca.trialDur.keys()), useNewton=True)
     t1 = perf_counter()
     with open(iter_save, 'a') as fh:
