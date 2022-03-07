@@ -5,6 +5,7 @@ from scipy.linalg import block_diag
 from data_processing_tools import makeK_big, logpdf_multnorm, logDetCompute
 from time import perf_counter
 from copy import deepcopy
+from inference import multiTrialInference
 
 def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
     ll = 0

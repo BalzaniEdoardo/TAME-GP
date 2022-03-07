@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from expectation_maximization import computeLL
 import sys,os
 import inspect
+from marginal_likelihood import *
 from time import perf_counter
 sys.path.append('../initialization/')
 from expectation_maximization_factorized import expectation_maximization_factorized
@@ -28,6 +29,7 @@ comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
 np.random.seed(rank+400)
+eval_trial_frac = 0.1 # 10% trials used for the aic evaluation
 
 def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolPoissonOpt=10**-12,
            boundsW0=None, boundsW1=None, boundsD=None,
@@ -85,7 +87,6 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
 
 
         # gather all the other inf results
-
         posterior_list = comm.gather(data.posterior_inf, root=0)
         print('gathered inference')
 
@@ -236,40 +237,67 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
 
 if rank == 0:
     ## load data
+    data_all = np.load(fh_name, allow_pickle=True)['data_cca'].all()
+    # data_all = data_all.subSampleTrial(np.arange(40))
+    ntrials = len(data_all.trialDur.keys())
+    all_tr = np.array(list(data_all.trialDur.keys()))
+    np.random.shuffle(all_tr)
+    eval_trs = int(ntrials * 0.1)
+    trial_train = all_tr[:-eval_trs]
+    trial_eval = all_tr[-eval_trs:]
 
-    data_cca = np.load(fh_name, allow_pickle=True)['data_cca'].all()
+    trial_train = np.sort(trial_train)
+    trial_eval = np.sort(trial_eval)
+
+    data_cca = data_all.subSampleTrial(trial_train)
+    data_eval = data_all.subSampleTrial(trial_eval)
+
     #data_cca = data_cca.subSampleTrial(np.arange(0,600,60))
-    all_trials = np.array(list(data_cca.trialDur.keys()))
+    all_trials = trial_train
     trial_x_proc = all_trials.shape[0] // size + 1
     tr_dict = {}
+    tr_dict_eval = {}
     i0 = 0
     idx = -1
     for idx in range(size-1):
         tr_dict[idx] = all_trials[np.arange(i0, i0 + trial_x_proc)]
         i0 += trial_x_proc
     tr_dict[idx + 1] = all_trials[i0:]
+
+    all_trials = trial_eval
+    trial_x_proc = all_trials.shape[0] // size + 1
+    i0 = 0
+    idx = -1
+    for idx in range(size - 1):
+        tr_dict_eval[idx] = all_trials[i0: i0 + trial_x_proc]
+        i0 += trial_x_proc
+    tr_dict_eval[idx + 1] = all_trials[i0:]
+
     string = ''
     for k in tr_dict.keys():
         print(k, tr_dict[k])
         string += '%d - %s\n'%(k,str(tr_dict[k]))
+        string += 'eval %d - %s\n' % (k, str(tr_dict_eval[k]))
     with open(iter_save, 'a') as fh:
         fh.write(string)
         fh.close()
 
 
-
 else:
     tr_dict = {}
+    tr_dict_eval = {}
     data_cca = {}
+    data_eval = {}
     interrupt = False
+
 # broadcast inputs
 tr_dict = comm.bcast(tr_dict, root=0)
+tr_dict_eval = comm.bcast(tr_dict_eval, root=0)
 data_cca = comm.bcast(data_cca, root=0)
+data_eval = comm.bcast(data_eval, root=0)
 
 if rank != 0:
     # for the workers, just keep the trial needed for the optimization
-
-
 
     data_cca = data_cca.subSampleTrial(tr_dict[rank])
     if maxIter > 0:
@@ -295,6 +323,34 @@ if rank != 0:
     multiTrialInference(data_cca, trial_list=tr_dict[rank],useGauss=0)
     posterior_list = comm.gather(data_cca.posterior_inf, root=0)
 
+    data_eval.xPar = data_cca.xPar
+    data_eval.priorPar = data_cca.priorPar
+    data_eval.stimPar = data_cca.stimPar
+
+    ##compute AIC
+    mll = marginal_likelihood(data_cca, remove_neu_dict=None, trial_list=tr_dict[rank])
+    mll = comm.reduce(mll, op=MPI.SUM, root=0)
+    remove_neu_dict = None
+    while True:
+        remove_neu_dict = comm.bcast(remove_neu_dict, root=0)
+        if remove_neu_dict == False:
+            break
+        mll_tmp = marginal_likelihood(data_cca, remove_neu_dict=remove_neu_dict, trial_list=tr_dict[rank])
+        mll_tmp = comm.reduce(mll_tmp, op=MPI.SUM, root=0)
+
+    # compute eval likelihood
+    mll = marginal_likelihood(data_eval, remove_neu_dict=None, trial_list=tr_dict_eval[rank])
+    print(rank, 'reduce mll')
+    mll = comm.reduce(mll, op=MPI.SUM, root=0)
+    while True:
+        remove_neu_dict = comm.bcast(remove_neu_dict, root=0)
+        if remove_neu_dict == False:
+            break
+        mll_tmp = marginal_likelihood(data_eval, remove_neu_dict=remove_neu_dict, trial_list=tr_dict_eval[rank])
+        pop = list(remove_neu_dict.keys())[0]
+        neu = remove_neu_dict[pop][0]
+        print(rank, 'reduce pop %d neu %d mll'%(pop,neu))
+        mll_tmp = comm.reduce(mll_tmp, op=MPI.SUM, root=0)
 
 
 else:
@@ -339,7 +395,61 @@ else:
         for tr in pst.keys():
             post_inf[tr] = pst[tr]
     data_cca.posterior_inf_noStim = post_inf
-    np.savez(save_path, data_cca=data_cca, iteration=maxIter)
+
+    ##compute AIC
+    print(rank, 'compute MLL')
+    mll = marginal_likelihood(data_cca, remove_neu_dict=None, trial_list=tr_dict[rank])
+    print(rank, 'reduce sum MLL')
+    mll = comm.reduce(mll, op=MPI.SUM, root=0)
+    mll_wo_neuk = []
+    N = 0
+    for k in range(len(data_cca.xPar)):
+        N += data_cca.xPar[k]['W0'].shape[0]
+        for neu in range(data_cca.xPar[k]['W0'].shape[0]):
+            string = 'marginal log-likelihood without neu %d of pop. %s\n'%(neu,data_cca.area_list[k])
+            with open(iter_save, 'a') as fh:
+                fh.write(string)
+                fh.close()
+
+            remove_neu_dict = {k:[neu]}
+            # print(rank, 'bcast neu %d dict', remove_neu_dict)
+            remove_neu_dict = comm.bcast(remove_neu_dict, root=0)
+            mll_tmp = marginal_likelihood(data_cca, remove_neu_dict=remove_neu_dict, trial_list=tr_dict[rank])
+
+            # print(rank, 'reduce neu %d mll', remove_neu_dict)
+            mll_wo_neuk.append(comm.reduce(mll_tmp, op=MPI.SUM, root=0))
+
+    comm.bcast(False, root=0)
+
+    mll_tot = N * mll - np.sum(mll_wo_neuk)
+    aic_leaveOneOut = 2 * data_cca.count_params() - 2*mll_tot
+    aic = 2 * data_cca.count_params() - 2 * mll
+
+    ## compute cv log - likelihood
+    data_eval.xPar = data_cca.xPar
+    data_eval.priorPar = data_cca.priorPar
+    data_eval.stimPar = data_cca.stimPar
+
+    mll = marginal_likelihood(data_eval, remove_neu_dict=None, trial_list=tr_dict_eval[rank])
+    mll = comm.reduce(mll, op=MPI.SUM, root=0)
+    mll_wo_neuk = []
+    N = 0
+    for k in range(len(data_eval.xPar)):
+        N += data_eval.xPar[k]['W0'].shape[0]
+        for neu in range(data_eval.xPar[k]['W0'].shape[0]):
+            string = 'eval marginal log-likelihood without neu %d of pop. %s\n' % (neu, data_eval.area_list[k])
+            with open(iter_save, 'a') as fh:
+                fh.write(string)
+                fh.close()
+
+            remove_neu_dict = {k: [neu]}
+            remove_neu_dict = comm.bcast(remove_neu_dict, root=0)
+            mll_tmp = marginal_likelihood(data_eval, remove_neu_dict=remove_neu_dict, trial_list=tr_dict_eval[rank])
+            mll_wo_neuk.append(comm.reduce(mll_tmp, op=MPI.SUM, root=0))
+    comm.bcast(False, root=0)
+    np.savez(save_path, data_cca=data_cca, data_eval=data_eval, iteration=maxIter,
+             aic_leaveOneOut=aic_leaveOneOut, aic=aic, eval_mll_leaveOneOut= N * mll - np.sum(mll_wo_neuk), mll=mll,
+             trial_eval=trial_eval,trial_train=trial_train)
 
 
 

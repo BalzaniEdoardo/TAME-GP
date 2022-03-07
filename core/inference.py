@@ -151,16 +151,23 @@ def hess_poissonLogLike(x, z0, z1, W0, W1, d, return_blocks=False):
 
 def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001,useGauss=1):
     # extract dim z0, stim and trial time
-    K0 = stimPar['W0'].shape[1]
+    #K0 = priorPar[0]['tau'].sh
     tau0 = priorPar[0]['tau']
-    T, stimDim = stim.shape
+    K0 = tau0.shape[0]
+    if not stim is None:
+        T, stimDim = stim.shape
+    else:
+        T,_ = xList[0].shape
 
     # extract z0 and its params
     z0 = zstack[:T*K0].reshape(T, K0)
     K0_big_inv = makeK_big(K0, tau0, None, binSize, epsNoise=epsNoise, T=T, computeInv=True)[2]
 
     # compute log likelihood for the stimulus and the GP
-    logLike = useGauss * gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
+    if stim.shape[1] == 0:
+        logLike = GPLogLike(z0, K0_big_inv)
+    else:
+        logLike = useGauss * gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -177,9 +184,14 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNois
 
 def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNoise=0.001,useGauss=1):
     # extract dim z0, stim and trial time
-    K0 = stimPar['W0'].shape[1]
+    #K0 = stimPar['W0'].shape[1]
     tau0 = priorPar[0]['tau']
-    T, stimDim = stim.shape
+    K0 = tau0.shape[0]
+
+    if stim.shape[1]==0:
+        T, stimDim = stim.shape
+    else:
+        T, _ = xList[0].shape
 
     # extract z0 and its params
     z0 = zstack[:T*K0].reshape(T,K0)
@@ -190,7 +202,8 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     grad_z0 = grad_GPLogLike(z0, K0_big_inv)
 
     grad_z0 = grad_z0.reshape(K0,T).T.flatten()
-    grad_z0 = grad_z0 + useGauss*grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+    if stim.shape[1] != 0:
+        grad_z0 = grad_z0 + useGauss*grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
     grad_logLike[:T*K0] = grad_z0
 
     i0 = K0*T
@@ -223,9 +236,14 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     :return:
     """
     # extract dim z0, stim and trial time
-    K0 = stimPar['W0'].shape[1]
+    #K0 = stimPar['W0'].shape[1]
     tau0 = priorPar[0]['tau']
-    T, stimDim = stim.shape
+    K0 = tau0.shape[0]
+
+    if stim.shape[1] != 0:
+        T, stimDim = stim.shape
+    else:
+        T, _ = xList[0].shape
 
     # extract z0 and its params
     z0 = zstack[:T*K0].reshape(T, K0)
@@ -234,7 +252,10 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     hess_logLike = np.zeros([zstack.shape[0]]*2, dtype=float)
     hess_z0 = hess_GPLogLike(z0, K0_big_inv)
     idx_rot = np.tile(np.arange(0, K0*T, T), T) + np.arange(K0*T)//K0
-    hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + useGauss*hess_gaussObsLogLike(stim,z0,stimPar['W0'],
+    if stim.shape[1] == 0:
+        hess_logLike[:T * K0, :T * K0] = usePrior * hess_z0[idx_rot, :][:, idx_rot]
+    else:
+        hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + useGauss*hess_gaussObsLogLike(stim,z0,stimPar['W0'],
                                                                                      stimPar['d'],stimPar['PsiInv'])
     i0 = K0*T
     for k in range(len(xList)):

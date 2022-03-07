@@ -53,11 +53,10 @@ class P_GPCCA(object):
 
             cov = {}
             non_nan_trial = {}
+            for tr in range(self.preproc.numTrials):
+                non_nan_trial[tr] = np.ones(self.trialDur[tr], dtype=bool)
             for var in var_list:
                 cov[var] = {}
-                if var == var_list[0]:
-                    for tr in range(self.preproc.numTrials):
-                        non_nan_trial[tr] = np.ones(self.trialDur[tr], dtype=bool)
 
                 for tr in range(self.preproc.numTrials):
                     cov[var][tr] = self.preproc.covariates[var][tr]
@@ -105,7 +104,10 @@ class P_GPCCA(object):
         assert((len(zdims)-1) == len(self.area_list))
         # get the observation dim
         stimDim = len(self.var_list)
-
+        if stimDim == 0:
+            self.initializeParam_poissonOnly(zdims, use_poissonPCA=use_poissonPCA, use_cca_for_stim=use_cca_for_stim,
+                                             nonLin=nonLin)
+            return
         # get means of stim and spike counts
         stimMean = np.zeros(stimDim)
         stimCov = np.zeros((stimDim,stimDim))
@@ -258,6 +260,136 @@ class P_GPCCA(object):
 
         # self.initPar = emptystruct()
         return
+
+    def initializeParam_poissonOnly(self, zdims, use_poissonPCA=False, use_cca_for_stim=False, nonLin=lambda x: np.log(np.abs(x))):
+        # this suppose at least 2 neural population and no task variables
+        # extract all spikes
+        spikes = np.zeros([self.preproc.ydim, np.sum(list(self.trialDur.values()))])
+        cc = 0
+        for tr in self.trialDur.keys():
+            T = self.preproc.data[tr]['Y'].shape[0]
+            spikes[:, cc:cc + T] = self.preproc.data[tr]['Y'].T
+            cc += T
+
+        xDims = []
+        xLogMeans = []
+        W1_list = []
+        W0_list = []
+        cc = 1
+
+        for area in self.area_list:
+
+            sel = self.filter_unit * (self.unit_area == area)
+            xDims.append(sel.sum())
+            xMeans_area = np.mean(spikes[sel], 1) + 1e-10
+            xLogMeans.append(np.log(xMeans_area))
+
+            if area == self.area_list[0]:
+                # if this is is the first area
+                sel0 = self.filter_unit * (self.unit_area == self.area_list[1])
+                stim_all = np.sqrt(spikes[sel0])
+            else: # use area 0 as a reference for the CCA proj
+                # if this is is the first area
+                sel0 = self.filter_unit * (self.unit_area == self.area_list[0])
+                stim_all = np.sqrt(spikes[sel0])
+
+            if use_poissonPCA:
+
+                # for CCA
+                # model = CCA(n_components=min(stim_all.shape[0],sel.sum()))
+                # model.fit(np.sqrt(spikes[sel].T), stim_all.T)
+                # V1 = model.x_rotations_
+                Y = np.vstack((np.sqrt(spikes[sel]), stim_all))
+                covY = np.cov(Y)
+                ee, U = np.linalg.eigh(covY[:sel.sum(), :sel.sum()])
+                sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
+                ee2, U2 = np.linalg.eigh(covY[sel.sum():, sel.sum():])
+                sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
+                M = np.dot(np.dot(np.linalg.inv(sqrtY11), covY[:sel.sum(), sel.sum():]), np.linalg.inv(sqrtY22))
+                VV1, d, VV2 = np.linalg.svd(M)
+                # canonical directions
+                U = np.dot(np.linalg.inv(sqrtY11), VV1)
+                # V = np.dot(np.linalg.inv(sqrtY22), VV2.T)
+                # gram-schmidt orthonorm
+                UN = gs(U, row_vecs=False)
+
+                W0_list.append(nonLin(UN[:, :zdims[0]]))
+
+                # for PCA
+
+                ## look in orthogonal spaces
+
+                mn_spk = np.mean(np.sqrt(spikes[sel]), axis=1)
+
+                orth_compl = np.sqrt(spikes[sel]).T - np.dot(
+                    np.dot((np.sqrt(spikes[sel]).T - mn_spk), UN[:, :zdims[0]]), UN[:, :zdims[0]].T) + mn_spk
+                covY = np.cov(orth_compl.T)
+                ## no orth assumption
+                # covY = np.cov(spikes[sel])
+
+                # moment conversion between Poisson & Gaussian with exponential nonlinearity (taken from K. Machens code)
+                lamb = np.log(np.abs(covY + np.outer(xMeans_area, xMeans_area) - np.diag(xMeans_area))) - np.log(
+                    np.outer(xMeans_area, xMeans_area))
+                # PCA
+                evals, evecs = np.linalg.eigh(lamb)
+                idx = np.argsort(evals)[::-1]
+                evecs = evecs[:, idx]
+                # sort eigenvectors according to same index
+                evals = evals[idx]
+                # select the first xdim eigenvectors
+                evecs = evecs[:, :zdims[cc]]
+                W1_list.append(evecs)
+
+
+
+            else:
+                W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
+                W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0])))
+            cc += 1
+
+        # zdims are the dimensinons of the latent variables
+        priorPar = []
+        for kk in zdims:
+            priorPar.append({'tau': np.random.rand(kk) * 0.5})
+
+        stimPar = {
+            'W0': None,
+            'd': None,
+            'PsiInv': None
+        }
+
+        xParams = []
+        for kk in range(len(xDims)):
+            pars = {
+                'W0': W0_list[kk],
+                'W1': W1_list[kk],
+                'd': xLogMeans[kk]
+            }
+            xParams.append(pars)
+        self.priorPar = priorPar
+        self.stimPar = stimPar
+        self.xPar = xParams
+        self.zdims = np.array(zdims)
+
+        # self.initPar = emptystruct()
+        return
+
+    def count_params(self):
+        """
+        Count the number model parameters
+        :return:
+        """
+        K0 = 0
+        for parDict in self.xPar:
+            K0 += np.prod(parDict['W0'].shape)
+            K0 += np.prod(parDict['W1'].shape)
+            K0 += np.prod(parDict['d'].shape)
+        K0 += np.prod(self.stimPar['W0'].shape)
+        K0 += np.prod(self.stimPar['d'].shape)
+        K0 += np.prod(self.stimPar['PsiInv'].shape)
+        for parDict in self.priorPar:
+            K0 += np.prod(parDict['tau'].shape)
+        return K0
 
     def get_observations(self, trNum):
         """

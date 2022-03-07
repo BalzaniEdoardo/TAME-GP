@@ -278,10 +278,14 @@ def learn_GaussianParams(data, test=False, isMPI=False):
     :param data: the cca_input data
     :return:
     """
+    # if no task variable is used
+    if len(data.var_list) == 0:
+        return
     sX, mu, xxT, xMu, Ezz = [0] * 5
 
     for tr in data.trialDur.keys():
         stim, _ = data.get_observations(tr)
+
         mean_post = data.posterior_inf[tr].mean[0].T
         cov_post = data.posterior_inf[tr].cov_t[0]
         p0,p1,p2,p3,p4 = gaussStepTrial(stim,mean_post,cov_post)
