@@ -464,17 +464,18 @@ class P_GPCCA(object):
         trial_0 = max(list(self.trialDur.keys()))+1
         for tr in range(trNum):
             z0 = np.random.multivariate_normal(mean=np.zeros(K0 * T), cov=K_big0, size=1).reshape(K0, T).T
-            W0 = self.stimPar['W0']
-            d = self.stimPar['d']
-            Psi = np.linalg.inv(self.stimPar['PsiInv'])
-            mu = np.einsum('ij,tj->ti', W0, z0) + d
-            x1 = np.zeros((T,W0.shape[0]))
-            for t in range(mu.shape[0]):
-                x1[t] = np.random.multivariate_normal(mean=mu[t],cov=Psi)
-            k=0
-            for kk in self.var_list:
-                self.preproc.covariates[kk][trial_0+tr] = x1[:, k]
-                k+=1
+            if len(self.var_list) > 0:
+                W0 = self.stimPar['W0']
+                d = self.stimPar['d']
+                Psi = np.linalg.inv(self.stimPar['PsiInv'])
+                mu = np.einsum('ij,tj->ti', W0, z0) + d
+                x1 = np.zeros((T,W0.shape[0]))
+                for t in range(mu.shape[0]):
+                    x1[t] = np.random.multivariate_normal(mean=mu[t],cov=Psi)
+                k=0
+                for kk in self.var_list:
+                    self.preproc.covariates[kk][trial_0+tr] = x1[:, k]
+                    k+=1
             gtlatent = deepcopy(z0)
             Y = np.zeros((T, self.preproc.ydim))
             for k in range(1, len(self.zdims)):

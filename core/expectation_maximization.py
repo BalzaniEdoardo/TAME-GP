@@ -224,12 +224,12 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
 
 if __name__ == '__main__':
     from time import perf_counter
-    from gen_synthetic_data import dataGen
+    from gen_synthetic_data import dataGen,dataGen_poissonOnly
     if os.path.exists('../inference_syntetic_data/L_BFGS_B_em4iter_sim_150Trials.npz'):
         dat = np.load('../inference_syntetic_data/L_BFGS_B_em4iter_sim_150Trials.npz',
                       allow_pickle=True)['dat'].all()
     else:
-        gen_dat = dataGen(10, T=50)
+        gen_dat = dataGen_poissonOnly(10, T=50)
         dat = gen_dat.cca_input
     dat.genNewData(10, 50)
 
@@ -239,13 +239,13 @@ if __name__ == '__main__':
     dat_true.xPar = subStruc.ground_truth_xPar
     dat_true.stimPar = subStruc.ground_truth_stimPar
     dat_true.priorPar = subStruc.ground_truth_priorPar
-    Psi = np.linalg.inv(subStruc.ground_truth_stimPar['PsiInv'])
-    ee = np.linalg.eigh(Psi)[0]
-    dat_true.stimPar['PsiInv'] = np.diag(1/np.sqrt(ee))
-    multiTrialInference(dat_true, trial_list=dat.new_trial_list, plot_trial=True)
-    print('fit par')
-    print(computeLL(subStruc)[0]-computeLL(dat_true)[0])
-    print('true par')
+    # Psi = np.linalg.inv(subStruc.ground_truth_stimPar['PsiInv'])
+    # ee = np.linalg.eigh(Psi)[0]
+    # dat_true.stimPar['PsiInv'] = np.diag(1/np.sqrt(ee))
+    # multiTrialInference(dat_true, trial_list=dat.new_trial_list, plot_trial=True)
+    # print('fit par')
+    # print(computeLL(subStruc)[0]-computeLL(dat_true)[0])
+    # print('true par')
     expectation_maximization(dat_true,maxIter=44,boundsW0=[-3,3],boundsD=[-10,10])
 
 
