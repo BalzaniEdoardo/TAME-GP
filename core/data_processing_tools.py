@@ -44,6 +44,36 @@ def block_inv(A):
         Binv[t] = np.linalg.inv(A[t])
     return Binv
 
+def logDetHessBlock(B,zdim,T):
+    """
+        Invert matrix using the block matrix inversion formula given the structure of the M.
+        This should reduce the order of the computation from (sum(K_i)xT)^3 to sum ( K_i x T)^3
+        :param M:
+        :param zdims:
+        :return:
+        """
+    K0 = zdim[0]
+    zdim = zdim[1:]
+    A = B[:K0 * T, :K0 * T]
+    C = B[K0 * T:, :K0 * T]
+    i0 = K0 * T
+    detBblocks = 0
+    invList = []
+    for K in zdim:
+        KT = K * T
+        B_block = B[i0:i0 + KT, i0:i0 + KT]
+        eig, u = np.linalg.eigh(B_block)
+        detBblocks += np.log(eig).sum()
+        invList.append(np.linalg.inv(B_block))
+        i0 += KT
+
+    Binv = block_diag(*invList)
+    CTBinv = np.dot(C.T, Binv)
+    CTBC = np.dot(CTBinv, C)
+
+    e, u = np.linalg.eig(A - CTBC)
+    logdetM = np.log(e).sum() + detBblocks
+    return logdetM
 
 def invertHessBlock(B, zdim, T):
     """
@@ -82,7 +112,7 @@ def logDetCompute(K):
     chl = np.linalg.cholesky(K)
     return 2 * np.sum(np.log(np.diag(chl)))
 
-def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=True):
+def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=True, returnSqrt=False):
     """
     Compute the RBF covariance for given parameters.
     :param K:
@@ -97,7 +127,10 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
     """
     # compute log det
     if computeInv:
-        K_big_inv = np.zeros(K_big.shape)
+        if not returnSqrt:
+            K_big_inv = np.zeros(K_big.shape)
+        else:
+            K_big_inv = np.zeros(K.shape)
         logdet_K_big = 0
     else:
         logdet_K_big = None
@@ -114,15 +147,23 @@ def compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau, computeInv=
             # eig = np.linalg.eigh(K[xd])[0]
             # if any(np.isnan(eig)):
             #     xxx=1
-            Kinv = np.linalg.inv(K[xd])
-            logdet_K = logDetCompute(K[xd])
-            K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv
+            
+            
+            if not returnSqrt:
+                logdet_K = logDetCompute(K[xd])
+                Kinv = np.linalg.inv(K[xd])
+                K_big_inv[ii:ii+T.shape[0], ii:ii+T.shape[0]] = Kinv
+            else:
+                vals, vecs = np.linalg.eigh(K[xd])
+                logdet_K = np.sum(np.log(vals))
+                U = vecs * np.sqrt(1/vals)
+                K_big_inv[xd] = U
             logdet_K_big = logdet_K_big + logdet_K
         ii += T.shape[0]
 
     return K, K_big, K_big_inv,  logdet_K_big
 
-def makeK_big(xdim, tau, trialDur, binSize, epsNoise=0.001, T=None, computeInv=False):
+def makeK_big(xdim, tau, trialDur, binSize, epsNoise=0.001, T=None, computeInv=False,returnSqrt=False):
     """
     Compute the GP covariance, its inverse and the log-det
     :param params:
@@ -143,7 +184,7 @@ def makeK_big(xdim, tau, trialDur, binSize, epsNoise=0.001, T=None, computeInv=F
     K = np.zeros([xdim, len(T), len(T)])
     K_big = np.zeros([xdim * len(T), xdim * len(T)])
     K, K_big, K_big_inv,  logdet_K_big = compileKBig_Fast(K, K_big, T, binSize, epsNoise, epsSignal, tau,
-                                                          computeInv=computeInv)
+                                                          computeInv=computeInv,returnSqrt=returnSqrt)
 
     return K, K_big, K_big_inv,  logdet_K_big
 
@@ -303,6 +344,14 @@ def gs(X, row_vecs=True, norm = True):
     else:
         return Y.T
 
+def logpdf_multnorm(x, mean, covInv, logdet):
+    rank = mean.shape[0]
+    dev = x - mean
+    # "maha" for "Mahalanobis distance".
+    maha = np.dot(np.dot(dev,covInv),dev)
+   # print('maha2', maha)
+    log2pi = np.log(2 * np.pi)
+    return -0.5 * (rank * log2pi + maha + logdet)
 
 if __name__ == '__main__':
     from gen_synthetic_data import dataGen

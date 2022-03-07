@@ -255,7 +255,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
         i0 += K * T
     return hess_logLike
 
-def inferTrial(data, trNum, zbar=None, useGauss=1):
+def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,remove_neu_dict=None):
     """
     Laplace inference for an individual trial
     :param data: P_GPCCA
@@ -268,7 +268,23 @@ def inferTrial(data, trNum, zbar=None, useGauss=1):
     stim, xList = data.get_observations(trNum)
     priorPar = data.priorPar
     stimPar = data.stimPar
-    xPar = data.xPar
+    xPar = deepcopy(data.xPar)
+    if not remove_neu_dict is None:
+        for k in range(len(xList)):
+
+            keep_neu = np.ones(xList[0].shape[1], dtype=bool)
+            keep_neu[remove_neu_dict[k]] = False
+            W0 = xPar[k]['W0']
+            W1 = xPar[k]['W1']
+            d = xPar[k]['d']
+            xList[k] = xList[k][:,keep_neu]
+            W0 = W0[keep_neu]
+            W1 = W1[keep_neu]
+            d = d[keep_neu]
+            xPar[k]['W0'] = W0
+            xPar[k]['W1'] = W1
+            xPar[k]['d'] = d
+
 
     if zbar is None:
         zdim = 0
@@ -291,11 +307,15 @@ def inferTrial(data, trNum, zbar=None, useGauss=1):
     zbar = res.x
     precision = -(hess_PpCCA_logLike(zbar, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
                   binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss))
+    if returnLogDetPrecision:
+        lgdet = logDetHessBlock(precision, data.zdims, data.trialDur[trNum])
+        return lgdet
     laplAppCov = invertHessBlock(precision, data.zdims, data.trialDur[trNum])
 
     return zbar, laplAppCov
 
-def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1):
+def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1,
+                        returnLogDetPrecision=False, remove_neu_dict=None):
     """
     Laplace inference for all trials and store the result in the data structure.
     :param data: CCA_input_data
@@ -310,6 +330,9 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         list_cov_post = []
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
+
+    if returnLogDetPrecision:
+        logDetPrecision = []
     cnt = 1
     for tr in trial_list:
         if plot_trial:
@@ -327,28 +350,31 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
 
         # set all the attributes related to trial as dictionaries
         T = data.trialDur[tr]
-        if tr == 701:
-            xxxx = 1
-        meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss)
-        if return_list_post:
-            list_mean_post.append(meanPost)
-            list_cov_post.append(covPost)
-        # retrive the K x T x T submarix of the posterior cov and the K x T mean for all the latent variables
-        # this will be used for the GP proir time constant learning
-        mean_k, cov_ii_k = parse_fullCov_latDim(data, meanPost, covPost, T)
+        if returnLogDetPrecision:
+            logDetPrecision.append(inferTrial(data, tr, zbar=zbar, useGauss=useGauss, returnLogDetPrecision=returnLogDetPrecision,remove_neu_dict=remove_neu_dict))
+        else:
+            meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict)
+            if return_list_post:
+                list_mean_post.append(meanPost)
+                list_cov_post.append(covPost)
+            # retrive the K x T x T submarix of the posterior cov and the K x T mean for all the latent variables
+            # this will be used for the GP proir time constant learning
+            mean_k, cov_ii_k = parse_fullCov_latDim(data, meanPost, covPost, T)
 
-        # retrive the T x K x K  covariance  and Tx K0 x K cross-cov used in the learning of the observation
-        # parameters
-        _, cov_ii_t, cov_0i_t = parse_fullCov(data, meanPost, covPost, T)
+            # retrive the T x K x K  covariance  and Tx K0 x K cross-cov used in the learning of the observation
+            # parameters
+            _, cov_ii_t, cov_0i_t = parse_fullCov(data, meanPost, covPost, T)
 
-        # create the structure containing the results
-        data.posterior_inf[tr] = emptyStruct()
-        data.posterior_inf[tr].mean = mean_k
-        data.posterior_inf[tr].cov_t = cov_ii_t
-        data.posterior_inf[tr].cross_cov_t = cov_0i_t
-        data.posterior_inf[tr].cov_k = cov_ii_k
+            # create the structure containing the results
+            data.posterior_inf[tr] = emptyStruct()
+            data.posterior_inf[tr].mean = mean_k
+            data.posterior_inf[tr].cov_t = cov_ii_t
+            data.posterior_inf[tr].cross_cov_t = cov_0i_t
+            data.posterior_inf[tr].cov_k = cov_ii_k
     if return_list_post:
         return list_mean_post,list_cov_post
+    if returnLogDetPrecision:
+        return logDetPrecision
     return
 
 
