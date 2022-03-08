@@ -346,7 +346,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     except Exception as e:
         if savepath and (rank == 0):
             with open(savepath, 'a') as fh:
-                string = 'trial %d exception: '%trNum + e
+                string = 'trial %d exception: '%trNum + e + '\n'
                 fh.write(string)
                 fh.close()
 
@@ -358,7 +358,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
                   binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss))
     if savepath and (rank == 0):
         with open(savepath, 'a') as fh:
-            string = 'trial %d precison computed: ' % trNum
+            string = 'trial %d precison computed \n' % trNum
             fh.write(string)
             fh.close()
 
@@ -368,7 +368,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     laplAppCov = invertHessBlock(precision, data.zdims, data.trialDur[trNum])
     if savepath and (rank == 0):
         with open(savepath, 'a') as fh:
-            string = 'trial %d precison invert precison, ok ' % trNum
+            string = 'trial %d precison invert precison, ok \n' % trNum
             fh.write(string)
             fh.close()
     return zbar, laplAppCov
