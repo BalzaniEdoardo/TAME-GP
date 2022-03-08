@@ -338,7 +338,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     return zbar, laplAppCov
 
 def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1,
-                        returnLogDetPrecision=False, remove_neu_dict=None):
+                        returnLogDetPrecision=False, remove_neu_dict=None,savepath=None, rank=None):
     """
     Laplace inference for all trials and store the result in the data structure.
     :param data: CCA_input_data
@@ -353,13 +353,22 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         list_cov_post = []
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
-
+    if savepath and (rank == 0):
+        with open(savepath,'a') as fh:
+            string = 'multitrial inf start\n'
+            fh.write(string)
+            fh.close()
     if returnLogDetPrecision:
         logDetPrecision = []
     cnt = 1
     for tr in trial_list:
         if plot_trial:
             print('infer trial: %d/%d'%(cnt,len(trial_list)))
+            if savepath and (rank == 0):
+                with open(savepath, 'a') as fh:
+                    string = 'infer trial: %d/%d\n'%(cnt,len(trial_list))
+                    fh.write(string)
+                    fh.close()
         cnt += 1
         if tr not in data.posterior_inf.keys():
             zbar = None
@@ -370,19 +379,34 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
             for k in range(len(data.zdims)):
                 zbar[i0:i0 + data.zdims[k] * data.trialDur[tr]] = data.posterior_inf[tr].mean[k].T.flatten()
                 i0 += data.zdims[k] * data.trialDur[tr]
+        if savepath and (rank == 0):
 
+            with open(savepath, 'a') as fh:
+                string = 'reconstructed zbar\n' % (cnt, len(trial_list))
+                fh.write(string)
+                fh.close()
         # set all the attributes related to trial as dictionaries
         T = data.trialDur[tr]
         if returnLogDetPrecision:
             logDetPrecision.append(inferTrial(data, tr, zbar=zbar, useGauss=useGauss, returnLogDetPrecision=returnLogDetPrecision,remove_neu_dict=remove_neu_dict))
         else:
             meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict)
+            if savepath and (rank == 0):
+                with open(savepath, 'a') as fh:
+                    string = 'inference ok\n' % (cnt, len(trial_list))
+                    fh.write(string)
+                    fh.close()
             if return_list_post:
                 list_mean_post.append(meanPost)
                 list_cov_post.append(covPost)
             # retrive the K x T x T submarix of the posterior cov and the K x T mean for all the latent variables
             # this will be used for the GP proir time constant learning
             mean_k, cov_ii_k = parse_fullCov_latDim(data, meanPost, covPost, T)
+            if savepath and (rank == 0):
+                with open(savepath, 'a') as fh:
+                    string = 'parsing ok\n' % (cnt, len(trial_list))
+                    fh.write(string)
+                    fh.close()
 
             # retrive the T x K x K  covariance  and Tx K0 x K cross-cov used in the learning of the observation
             # parameters
@@ -394,6 +418,11 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
             data.posterior_inf[tr].cov_t = cov_ii_t
             data.posterior_inf[tr].cross_cov_t = cov_0i_t
             data.posterior_inf[tr].cov_k = cov_ii_k
+            if savepath and (rank == 0):
+                with open(savepath, 'a') as fh:
+                    string = 'storing ok\n' % (cnt, len(trial_list))
+                    fh.write(string)
+                    fh.close()
     if return_list_post:
         return list_mean_post,list_cov_post
     if returnLogDetPrecision:
