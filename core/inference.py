@@ -276,7 +276,8 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
         i0 += K * T
     return hess_logLike
 
-def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,remove_neu_dict=None):
+def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,remove_neu_dict=None,
+               savepath=None,rank=None):
     """
     Laplace inference for an individual trial
     :param data: P_GPCCA
@@ -287,9 +288,21 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     """
     # retrive outputs
     stim, xList = data.get_observations(trNum)
+    if savepath and (rank == 0):
+        with open(savepath,'a') as fh:
+            string = 'trial %d obs extracted\n'%trNum
+            fh.write(string)
+            fh.close()
+
     priorPar = data.priorPar
     stimPar = data.stimPar
     xPar = deepcopy(data.xPar)
+    if savepath and (rank == 0):
+        with open(savepath, 'a') as fh:
+            string = 'trial %d params extracted\n' % trNum
+            fh.write(string)
+            fh.close()
+
     if not remove_neu_dict is None:
         for k in range(len(xList)):
             W0 = xPar[k]['W0']
@@ -323,18 +336,41 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
                   binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss)
     #dispFlag = (trNum == 706) or (trNum == 514)
     dispFlag = False
-    res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp':dispFlag})
+    if savepath and (rank == 0):
+        with open(savepath, 'a') as fh:
+            string = 'trial %d zbar.shape %s\n' %(trNum, str(zbar.shape))
+            fh.write(string)
+            fh.close()
+    try:
+        res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp':dispFlag})
+    except Exception as e:
+        if savepath and (rank == 0):
+            with open(savepath, 'a') as fh:
+                string = 'trial %d exception: '%trNum + e
+                fh.write(string)
+                fh.close()
+
     if not res.success:
         print('unable to find MAP for trial', trNum)
 
     zbar = res.x
     precision = -(hess_PpCCA_logLike(zbar, stim, xList, priorPar=priorPar, stimPar=stimPar, xPar=xPar,
                   binSize=data.binSize, epsNoise=data.epsNoise,useGauss=useGauss))
+    if savepath and (rank == 0):
+        with open(savepath, 'a') as fh:
+            string = 'trial %d precison computed: ' % trNum
+            fh.write(string)
+            fh.close()
+
     if returnLogDetPrecision:
         lgdet = logDetHessBlock(precision, data.zdims, data.trialDur[trNum])
         return lgdet
     laplAppCov = invertHessBlock(precision, data.zdims, data.trialDur[trNum])
-
+    if savepath and (rank == 0):
+        with open(savepath, 'a') as fh:
+            string = 'trial %d precison invert precison, ok ' % trNum
+            fh.write(string)
+            fh.close()
     return zbar, laplAppCov
 
 def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1,
@@ -390,7 +426,8 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         if returnLogDetPrecision:
             logDetPrecision.append(inferTrial(data, tr, zbar=zbar, useGauss=useGauss, returnLogDetPrecision=returnLogDetPrecision,remove_neu_dict=remove_neu_dict))
         else:
-            meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict)
+            meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict,
+                                           savepath=savepath,rank=rank)
             if savepath and (rank == 0):
                 with open(savepath, 'a') as fh:
                     string = 'inference ok\n'
