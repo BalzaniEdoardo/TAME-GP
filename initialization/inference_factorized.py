@@ -79,7 +79,7 @@ def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx
     xPar = dat.xPar
 
     # extract dim z0, stim and trial time
-    K0 = stimPar['W0'].shape[1]
+    K0 = xPar[0]['W0'].shape[1]
     T, stimDim = stim.shape
 
     # extract z0 and its params
@@ -87,7 +87,10 @@ def factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,rev_idx
 
 
     # compute log likelihood for the stimulus and the GP
-    logLike = useGauss*gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) - 0.5 * (zbar*zbar).sum()
+    if stimDim > 0:
+        logLike = useGauss*gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) - 0.5 * (zbar*zbar).sum()
+    else:
+        logLike = - 0.5 * (zbar*zbar).sum()
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -105,6 +108,8 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
 
 
     T = dat.trialDur[trNum]
+    K0 = dat.xPar[0]['W0'].shape[1]
+    stimDim = stim.shape[1]
     sumK = np.sum(dat.zdims)
 
     # initialize zbar if none
@@ -124,15 +129,20 @@ def grad_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
         zbar = zbar[rev_idx_sort]
 
     # retrive stim par
-    C = dat.stimPar['W0']
-    d = dat.stimPar['d']
-    PsiInv = dat.stimPar['PsiInv']
-    _, K0 = C.shape
+    if stimDim > 0:
+        C = dat.stimPar['W0']
+        d = dat.stimPar['d']
+        PsiInv = dat.stimPar['PsiInv']
 
 
-    # extract grad z0
-    grad_factorized = np.zeros(T*sumK)
-    grad_z0 = useGauss * grad_gaussObsLogLike(stim,zbar[:T*K0].reshape(T,K0), C, d, PsiInv) - zbar[:T*K0]
+        # extract grad z0
+        grad_factorized = np.zeros(T*sumK)
+        grad_z0 = useGauss * grad_gaussObsLogLike(stim,zbar[:T*K0].reshape(T,K0), C, d, PsiInv) - zbar[:T*K0]
+
+    else:
+        grad_factorized = np.zeros(T * sumK)
+        grad_z0 = - zbar[:T*K0]
+
     grad_factorized[:K0*T] = grad_z0.flatten()#.reshape(T,K0).T.flatten()
 
     i0 = K0*T
@@ -165,6 +175,8 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
     # retrive data
     T = dat.trialDur[trNum]
     sumK = np.sum(dat.zdims)
+    K0 = dat.xPar[0]['W0'].shape[1]
+    stimDim = stim.shape[1]
 
     # initialize zbar if none
     if (zbar is None) and ('posterior_inf' not in dat.__dict__.keys()):
@@ -181,16 +193,15 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
         if rev_idx_sort is None:
             rev_idx_sort = sortGradient_idx(T, dat.zdims, isReverse=True)
         zbar = zbar[rev_idx_sort]
-
-
-    # retrive stim par
-    C = dat.stimPar['W0']
-    d = dat.stimPar['d']
-    PsiInv = dat.stimPar['PsiInv']
-    _, K0 = C.shape
-
     # extract grad z0
     z0 = zbar[:T * K0].reshape(T, K0)
+
+    if stimDim > 0:
+        # retrive stim par
+        C = dat.stimPar['W0']
+        d = dat.stimPar['d']
+        PsiInv = dat.stimPar['PsiInv']
+
 
     # compute log likelihood for the stimulus
     i0 = K0 * T
@@ -198,11 +209,16 @@ def hess_factorized_logLike(dat, trNum, stim, xList, zbar=None, idx_sort=None,
     if not inverse:
         H = np.zeros([T, sumK, sumK], dtype=float)
         H = H - np.eye(sumK)
-        H[:, :K0, :K0] = H[:, :K0, :K0] + useGauss*hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
+        if stimDim > 0:
+            H[:, :K0, :K0] = H[:, :K0, :K0] + useGauss*hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True)
     else:
         inverseBlocks = []
         corssBlocks = []#np.zeros((K0,T*(sumK-K0)),dtype=np.float64)
-        A = useGauss * hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True) - np.eye(K0)
+        if stimDim > 0:
+            A = useGauss * hess_gaussObsLogLike(stim, z0, C, d, PsiInv, return_blocks=True) - np.eye(K0)
+        else:
+            A = - np.eye(K0)
+
 
     for k in range(len(xList)):
         N, K = dat.xPar[k]['W1'].shape
