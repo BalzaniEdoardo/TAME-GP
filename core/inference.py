@@ -382,7 +382,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         if savepath and (rank == 0):
 
             with open(savepath, 'a') as fh:
-                string = 'reconstructed zbar\n' % (cnt, len(trial_list))
+                string = 'reconstructed zbar\n'
                 fh.write(string)
                 fh.close()
         # set all the attributes related to trial as dictionaries
@@ -393,7 +393,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
             meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict)
             if savepath and (rank == 0):
                 with open(savepath, 'a') as fh:
-                    string = 'inference ok\n' % (cnt, len(trial_list))
+                    string = 'inference ok\n'
                     fh.write(string)
                     fh.close()
             if return_list_post:
@@ -404,7 +404,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
             mean_k, cov_ii_k = parse_fullCov_latDim(data, meanPost, covPost, T)
             if savepath and (rank == 0):
                 with open(savepath, 'a') as fh:
-                    string = 'parsing ok\n' % (cnt, len(trial_list))
+                    string = 'parsing ok\n'
                     fh.write(string)
                     fh.close()
 
@@ -420,7 +420,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
             data.posterior_inf[tr].cov_k = cov_ii_k
             if savepath and (rank == 0):
                 with open(savepath, 'a') as fh:
-                    string = 'storing ok\n' % (cnt, len(trial_list))
+                    string = 'storing ok\n'
                     fh.write(string)
                     fh.close()
     if return_list_post:
