@@ -12,8 +12,11 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
     stimPar = data.stimPar
     xPar = data.xPar
     priorPar = data.priorPar
-    cov_gauss = np.linalg.pinv(stimPar['PsiInv'])
-    log_det_gauss = logDetCompute(cov_gauss)
+    try:
+        cov_gauss = np.linalg.pinv(stimPar['PsiInv'])
+        log_det_gauss = logDetCompute(cov_gauss)
+    except:
+        pass
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
     for tr in trial_list:
