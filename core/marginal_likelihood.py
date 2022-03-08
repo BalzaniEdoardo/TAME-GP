@@ -22,12 +22,13 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
         stim, xList = data.get_observations(tr)
         zmap = data.posterior_inf[tr].mean
         # gaussian likelihood
-        mean_gauss = np.dot(stimPar['W0'],zmap[0]).T + stimPar['d']# D x T
-        blk_cov_inv = block_diag(*[stimPar['PsiInv']]*T)
-        # for tk in range(mean_gauss.shape[0]):
-        #     ll += multivariate_normal.logpdf(stim[tk], mean=mean_gauss[tk],cov=cov_gauss)
+        if stim.shape[1] > 0:
+            mean_gauss = np.dot(stimPar['W0'],zmap[0]).T + stimPar['d']# D x T
+            blk_cov_inv = block_diag(*[stimPar['PsiInv']]*T)
+            # for tk in range(mean_gauss.shape[0]):
+            #     ll += multivariate_normal.logpdf(stim[tk], mean=mean_gauss[tk],cov=cov_gauss)
 
-        ll += logpdf_multnorm(stim.flatten(), mean_gauss.flatten(), blk_cov_inv, log_det_gauss*stim.shape[0])
+            ll += logpdf_multnorm(stim.flatten(), mean_gauss.flatten(), blk_cov_inv, log_det_gauss*stim.shape[0])
         # print('gauss ', perf_counter()-t0)
         # poisson likelihood
 
