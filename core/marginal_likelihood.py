@@ -39,7 +39,7 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
             W0 = xPar[k]['W0']
             W1 = xPar[k]['W1']
             d = xPar[k]['d']
-            if not remove_neu_dict is None:
+            if (not remove_neu_dict is None) and (k in remove_neu_dict.keys()):
                 keep_neu = np.ones(W0.shape[0],dtype=bool)
                 keep_neu[remove_neu_dict[k]] = False
                 W0 = W0[keep_neu]

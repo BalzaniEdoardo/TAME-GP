@@ -292,16 +292,18 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     xPar = deepcopy(data.xPar)
     if not remove_neu_dict is None:
         for k in range(len(xList)):
-
-            keep_neu = np.ones(xList[0].shape[1], dtype=bool)
-            keep_neu[remove_neu_dict[k]] = False
             W0 = xPar[k]['W0']
             W1 = xPar[k]['W1']
             d = xPar[k]['d']
-            xList[k] = xList[k][:,keep_neu]
-            W0 = W0[keep_neu]
-            W1 = W1[keep_neu]
-            d = d[keep_neu]
+
+            keep_neu = np.ones(xList[0].shape[1], dtype=bool)
+            if k in remove_neu_dict.keys():
+                keep_neu[remove_neu_dict[k]] = False
+                xList[k] = xList[k][:, keep_neu]
+                W0 = W0[keep_neu]
+                W1 = W1[keep_neu]
+                d = d[keep_neu]
+
             xPar[k]['W0'] = W0
             xPar[k]['W1'] = W1
             xPar[k]['d'] = d
