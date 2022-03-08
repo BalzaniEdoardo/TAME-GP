@@ -384,9 +384,12 @@ class P_GPCCA(object):
             K0 += np.prod(parDict['W0'].shape)
             K0 += np.prod(parDict['W1'].shape)
             K0 += np.prod(parDict['d'].shape)
-        K0 += np.prod(self.stimPar['W0'].shape)
-        K0 += np.prod(self.stimPar['d'].shape)
-        K0 += np.prod(self.stimPar['PsiInv'].shape)
+        try:
+            K0 += np.prod(self.stimPar['W0'].shape)
+            K0 += np.prod(self.stimPar['d'].shape)
+            K0 += np.prod(self.stimPar['PsiInv'].shape)
+        except:
+            pass
         for parDict in self.priorPar:
             K0 += np.prod(parDict['tau'].shape)
         return K0
