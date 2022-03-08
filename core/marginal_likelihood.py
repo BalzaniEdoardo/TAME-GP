@@ -79,7 +79,7 @@ def marginal_likelihood(data, remove_neu_dict=None, trial_list=None):
 if __name__ == '__main__':
     from inference import inferTrial,multiTrialInference
     data = np.load(
-        '/Users/edoardo/Work/Code/FF_dimReduction/P-GPCCA_analyze/moving_mean_sampler/hdim_ldsB_dynamicInput_pgpcca.npz',
+        '/Users/edoardo/Work/Code/P-GPCCA/fit_cluster/neural_communic_subspace_nostim_fit_1.npz',
         allow_pickle=True)['data_cca'].all()
 
     K0 = 0
@@ -87,33 +87,43 @@ if __name__ == '__main__':
         K0 += np.prod(parDict['W0'].shape)
         K0 += np.prod(parDict['W1'].shape)
         K0 += np.prod(parDict['d'].shape)
-    K0 += np.prod(data.stimPar['W0'].shape)
-    K0 += np.prod(data.stimPar['d'].shape)
-    K0 += np.prod(data.stimPar['PsiInv'].shape)
+    try:
+        K0 += np.prod(data.stimPar['W0'].shape)
+        K0 += np.prod(data.stimPar['d'].shape)
+        K0 += np.prod(data.stimPar['PsiInv'].shape)
+    except:
+        pass
     for parDict in data.priorPar:
         K0 += np.prod(parDict['tau'].shape)
 
 
     #print(jointLL_at_MAP(data))
-    data_1 = deepcopy(data)
-    data_1.zdims = [1,data.zdims[1]]
-    K1 = 0
-    for tr in data_1.trialDur.keys():
-        data_1.posterior_inf[tr].mean[0] = data.posterior_inf[tr].mean[0][:1,:]
-        data_1.posterior_inf[tr].cov_k[0] = data.posterior_inf[tr].cov_k[0][:1,:,:]
-        data_1.posterior_inf[tr].cross_cov_t[1] = data.posterior_inf[tr].cross_cov_t[1][:,:1,:]
-        data_1.stimPar['W0'] = data_1.stimPar['W0'][:,:1]
-        data_1.xPar[0]['W0'] = data_1.xPar[0]['W0'][:, :1]
-        data_1.priorPar[0]['tau'] = data_1.priorPar[0]['tau'][:1]
-        for parDict in data_1.xPar:
-            K1 += np.prod(parDict['W0'].shape)
-            K1 += np.prod(parDict['W1'].shape)
-            K1 += np.prod(parDict['d'].shape)
-        K1 += np.prod(data_1.stimPar['W0'].shape)
-        K1 += np.prod(data_1.stimPar['d'].shape)
-        K1 += np.prod(data_1.stimPar['PsiInv'].shape)
-        for parDict in data_1.priorPar:
-            K1 += np.prod(parDict['tau'].shape)
+    # data_1 = deepcopy(data)
+    # data_1.zdims = [1,data.zdims[1]]
+    # K1 = 0
+    # for tr in data_1.trialDur.keys():
+    #     data_1.posterior_inf[tr].mean[0] = data.posterior_inf[tr].mean[0][:1,:]
+    #     data_1.posterior_inf[tr].cov_k[0] = data.posterior_inf[tr].cov_k[0][:1,:,:]
+    #     data_1.posterior_inf[tr].cross_cov_t[1] = data.posterior_inf[tr].cross_cov_t[1][:,:1,:]
+    #     try:
+    #         data_1.stimPar['W0'] = data_1.stimPar['W0'][:,:1]
+    #     except:
+    #         pass
+    #     data_1.xPar[0]['W0'] = data_1.xPar[0]['W0'][:, :1]
+    #     data_1.priorPar[0]['tau'] = data_1.priorPar[0]['tau'][:1]
+    #     for parDict in data_1.xPar:
+    #         K1 += np.prod(parDict['W0'].shape)
+    #         K1 += np.prod(parDict['W1'].shape)
+    #         K1 += np.prod(parDict['d'].shape)
+    #     try:
+    #         K1 += np.prod(data_1.stimPar['W0'].shape)
+    #         K1 += np.prod(data_1.stimPar['d'].shape)
+    #         K1 += np.prod(data_1.stimPar['PsiInv'].shape)
+    #     except:
+    #         pass
+    #
+    #     for parDict in data_1.priorPar:
+    #         K1 += np.prod(parDict['tau'].shape)
 
 
 
@@ -122,9 +132,9 @@ if __name__ == '__main__':
     data_sub = deepcopy(data)
     data_sub.initializeParam(data.zdims)
 
-    print(2*K0 - 2*marginal_likelihood(data, trial_list=[0,1,2,5,6,7,8,9]))
-    print(2*K1 - 2*marginal_likelihood(data_1, trial_list=[0,1,2,5,6,7,8,9]))
-    print(2*K0 - 2*marginal_likelihood(data_sub, trial_list=[0,1,2,5,6,7,8,9]))
+    print(2*K0 - 2*marginal_likelihood(data, trial_list=[0,1,2,6,7,8,9]))
+    # print(2*K1 - 2*marginal_likelihood(data_1, trial_list=[0,1,2,6,7,8,9]))
+    print(2*K0 - 2*marginal_likelihood(data_sub, trial_list=[0,1,2,6,7,8,9]))
 
     # print(marginal_likelihood(data, trial_list=[0,1,2],remove_neu_dict={0:[]}))
     # print(marginal_likelihood(data, trial_list=[0,1,2],remove_neu_dict={0:[8]}))
