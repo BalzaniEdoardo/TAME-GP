@@ -247,7 +247,8 @@ def compileTrialStackedObsAndLatent_gauss(data, trial_list, T, yDim, K0):
 def full_GaussLL(data):
     # T, sX, mu, _, xMu, Ezz = learn_GaussianParams(data, test=False, isMPI=True)
     T = np.sum(list(data.trialDur.values()))
-    stim = data.get_observations(0)[0]
+    tr = list(data.trialDur.keys())[0]
+    stim = data.get_observations(tr)[0]
     stimDim = stim.shape[1]
     if stimDim == 0:
         return 0
