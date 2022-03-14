@@ -9,6 +9,9 @@ from inference import multiTrialInference
 
 def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
     ll = 0
+    ll_spikes = 0
+    ll_stim = 0
+    ll_prior = 0
     stimPar = data.stimPar
     xPar = data.xPar
     priorPar = data.priorPar
@@ -30,8 +33,9 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
             blk_cov_inv = block_diag(*[stimPar['PsiInv']]*T)
             # for tk in range(mean_gauss.shape[0]):
             #     ll += multivariate_normal.logpdf(stim[tk], mean=mean_gauss[tk],cov=cov_gauss)
-
-            ll += logpdf_multnorm(stim.flatten(), mean_gauss.flatten(), blk_cov_inv, log_det_gauss*stim.shape[0])
+            val = logpdf_multnorm(stim.flatten(), mean_gauss.flatten(), blk_cov_inv, log_det_gauss*stim.shape[0])
+            ll_stim += val
+            ll += val
         # print('gauss ', perf_counter()-t0)
         # poisson likelihood
 
@@ -50,7 +54,9 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
             # t0 = perf_counter()
             m0 = np.dot(W0, zmap[0]).T
             m1 = np.dot(W1, zmap[k+1]).T
-            ll += np.sum(poisson.logpmf(xList[k][:,keep_neu], mu=np.exp(m0+m1+d)))
+            val = np.sum(poisson.logpmf(xList[k][:,keep_neu], mu=np.exp(m0+m1+d)))
+            ll_spikes += val
+            ll += val
             # print('poisson ', perf_counter() - t0)
 
         for k in zmap.keys():
@@ -58,8 +64,13 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
             tau = priorPar[k]['tau']
             _, Kbig, Kbiginv, log_det = makeK_big(tau.shape[0], tau, None, data.binSize, epsNoise=data.epsNoise, T=T,
                                                   computeInv=True)
-            ll += logpdf_multnorm(zmap[k].flatten(), np.zeros(Kbig.shape[0]), Kbiginv, log_det)
+            val = logpdf_multnorm(zmap[k].flatten(), np.zeros(Kbig.shape[0]), Kbiginv, log_det)
+            ll_prior += val
+            ll += val
             # print('GP ', perf_counter() - t0)
+    print('LL stim', ll_stim)
+    print('LL spikes', ll_spikes)
+    print('LL prior', ll_prior)
     return ll
 
 def marginal_likelihood(data, remove_neu_dict=None, trial_list=None):
@@ -69,10 +80,13 @@ def marginal_likelihood(data, remove_neu_dict=None, trial_list=None):
 
     ll0 = jointLL_at_MAP(data,trial_list=trial_list, remove_neu_dict=remove_neu_dict)
     ll1 = 0.5 * np.sum(multiTrialInference(data, trial_list=trial_list, useGauss=1, returnLogDetPrecision=True, remove_neu_dict=remove_neu_dict)) # this is log(1/|cov|)
+    print('0.5 *  log | post cov^-1 |', ll1)
+
     T = 0
     for tr in trial_list:
         T += data.trialDur[tr]
-    return ll0 - ll1 - np.sum(data.zdims) * T * np.log(2*np.pi)
+    print('sum(K_i) * T_tot * log 2 \pi', 0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi))
+    return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2*np.pi)
 
 
 
