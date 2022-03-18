@@ -1,7 +1,10 @@
 *.sh
 inference_syntetic_data/*
+Area_Interaction_noStim/*
+Area_Interaction_Stim/*
 fit_cluster/*
 *.mat
+test_mpi/*
 firefly_utils/*
 *.npy
 *.npz
