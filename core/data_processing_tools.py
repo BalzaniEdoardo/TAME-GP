@@ -3,6 +3,7 @@ from scipy.linalg import block_diag
 from copy import deepcopy
 from numba import jit
 import csr
+from scipy.stats import multivariate_normal
 
 def fast_stackCSRHes_memoryPreAllocation(vals, rowsptr, colindices, nnz, nrows, ncols, i0PTR, i0Val, newHes, sumK):
     """
@@ -352,6 +353,90 @@ def logpdf_multnorm(x, mean, covInv, logdet):
    # print('maha2', maha)
     log2pi = np.log(2 * np.pi)
     return -0.5 * (rank * log2pi + maha + logdet)
+
+
+
+def probCCA_MLE(X, Y, latentDim=2):
+
+    cov = np.cov(np.hstack((X,Y)).T)
+    # standard cca for weight updates
+    dim_X = X.shape[1]
+    ee, U = np.linalg.eigh(cov[:dim_X, :dim_X])
+    ee = np.abs(ee) # should be
+    srt_idx = np.argsort(ee)
+    ee = ee[srt_idx]
+    U = U[:, srt_idx]
+    ee = ee[::-1]
+    U = U[:, ::-1]
+    sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
+    ee2, U2 = np.linalg.eigh(cov[dim_X:, dim_X:])
+    srt_idx = np.argsort(ee2)
+    ee2 = ee2[srt_idx]
+    U2 = U2[:, srt_idx]
+    ee2 = ee2[::-1]
+    U2 = U2[:, ::-1]
+    sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
+    M = np.dot(np.dot(np.linalg.pinv(sqrtY11), cov[:dim_X, dim_X:]), np.linalg.pinv(sqrtY22))
+    VV1, cancorr, VV2 = np.linalg.svd(M)
+
+    # std canonical directions & mle proj
+    U = np.dot(np.linalg.pinv(sqrtY11), VV1)
+    V = np.dot(np.linalg.pinv(sqrtY22), VV2.T)
+    Mi = np.diag(np.sqrt(cancorr[:latentDim]))
+    WX = np.dot(np.dot(cov[:dim_X,:dim_X], U[:,:latentDim]), Mi)
+    WY = np.dot(np.dot(cov[dim_X:, dim_X:], V[:,:latentDim]),Mi)
+    muX = X.mean(axis=0)
+    muY = Y.mean(axis=0)
+    PhiX = cov[:dim_X,:dim_X] - np.dot(WX, WX.T)
+    PhiY = cov[dim_X:, dim_X:] - np.dot(WY, WY.T)
+    E_z_X = np.dot(np.dot(Mi.T, U[:,:latentDim].T), (X - muX).T).T
+    E_z_Y = np.dot(np.dot(Mi.T, V[:,:latentDim].T), (Y - muY).T).T
+    cov_z_X = np.eye(latentDim) - np.dot(Mi,Mi.T)
+    cov_z_Y = np.eye(latentDim) - np.dot(Mi, Mi.T)
+
+    sigma_zx = np.block([WX.T,WY.T])
+    s00 = np.dot(WX, WX.T) + PhiX
+    s11 = np.dot(WY, WY.T) + PhiY
+    s10 = np.dot(WY, WX.T)
+    sigma_xx_inv = np.linalg.pinv(np.block([[s00, s10.T], [s10, s11]]))
+    muXY = np.hstack((muX, muY))
+    E_z_XY = np.einsum('ij,tj->ti', np.dot(sigma_zx, sigma_xx_inv), np.hstack((X,Y)) - muXY)
+
+    cov_z_XY = np.linalg.pinv( np.eye(latentDim) + np.dot(np.dot(WX.T, np.linalg.pinv(PhiX)),WX) +
+                              np.dot(np.dot(WY.T, np.linalg.pinv(PhiY)), WY))
+
+    einv = np.abs(np.linalg.eigh(sigma_xx_inv)[0])
+    log_det_sigma_xx = np.log(1/einv).sum()
+    n_half = X.shape[0]*0.5
+    log_like = n_half * (dim_X + Y.shape[1]) * np.log(np.pi*2) + n_half * log_det_sigma_xx +\
+               n_half * np.dot(cov.flatten(), sigma_xx_inv.T.flatten())
+
+    return E_z_X, E_z_Y, E_z_XY, cov_z_X, cov_z_Y, cov_z_XY, WX, WY, PhiX, PhiY, muX, muY,cancorr,log_like, np.dot(Mi.T, U[:,:latentDim].T)
+
+
+def probPCA(X, latentDim):
+    assert(latentDim < X.shape[1])
+    cov = np.cov(X.T)
+    ee, U = np.linalg.eigh(cov)
+    srt_idx = np.argsort(ee)
+    ee = np.abs(ee[srt_idx])[::-1]
+    U = U[:, srt_idx]
+    U = U[:, ::-1]
+    UM = U[:, :latentDim]
+    var_expl = ee[:latentDim]/np.sum(ee)
+    LM = np.diag(ee[:latentDim])
+    mu = X.mean(axis=0)
+    sigma2 = np.mean(ee[latentDim:])
+    W = np.dot(UM, np.sqrt(LM - np.eye(LM.shape[0])*sigma2))
+    Minv = np.linalg.pinv(np.dot(W.T,W) + np.eye(latentDim)*sigma2)
+    E_z_X = np.dot(Minv, np.dot(W.T, (X-mu).T)).T
+    cov_z_X = np.linalg.pinv(np.eye(latentDim) + (np.dot(W.T, W)/sigma2))
+    C = np.dot(W,W.T) + np.eye(X.shape[1])*sigma2
+    log_like = multivariate_normal.logpdf(X, mean=mu, cov=C).sum()
+    return E_z_X, cov_z_X, W, sigma2, mu, var_expl, log_like
+
+
+
 
 if __name__ == '__main__':
     from gen_synthetic_data import dataGen

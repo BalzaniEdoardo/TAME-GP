@@ -449,6 +449,30 @@ class P_GPCCA(object):
         subStruct.preproc.numTrials = len(subStruct.trialDur.keys())
         return subStruct
 
+
+    def mergeStruc(self, other):
+        ## check no trial overlap
+        assert(set(self.trialDur.keys()).intersection(other.trialDur.keys()) == set())
+
+        mergeStruc = deepcopy(self)
+        mergeStruc.trialDur.update(other.trialDur)
+        mergeStruc.preproc.data.update(other.preproc.data)
+        mergeStruc.preproc.T.update(other.preproc.T)
+
+        if 'posterior_inf' in self.__dict__.keys():
+            mergeStruc.posterior_inf.update(other.posterior_inf)
+
+        for var in mergeStruc.preproc.covariates.keys():
+            mergeStruc.preproc.covariates[var].update(other.preproc.covariates[var])
+
+        # if 'ground_truth_latent' in self.__dict__.keys():
+        #     idxTr = np.array(list(self.trialDur.keys()))
+        #     keep = np.ones(idxTr.shape[0],dtype=bool)
+        #     subStruct.ground_truth_latent = np.array(subStruct.ground_truth_latent,dtype=object)[keep]
+
+        mergeStruc.preproc.numTrials = len(self.trialDur.keys()) + len(other.trialDur.keys())
+        return mergeStruc
+
     def genNewData(self, trNum, T):
         """
         Sample trNum new trials of duration T using model parameters

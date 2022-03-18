@@ -68,25 +68,29 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
             ll_prior += val
             ll += val
             # print('GP ', perf_counter() - t0)
-    print('LL stim', ll_stim)
-    print('LL spikes', ll_spikes)
-    print('LL prior', ll_prior)
-    return ll
+    # print('LL stim', ll_stim)
+    # print('LL spikes', ll_spikes)
+    # print('LL prior', ll_prior)
+    return ll,ll_prior,ll_stim,ll_spikes
 
-def marginal_likelihood(data, remove_neu_dict=None, trial_list=None):
+def marginal_likelihood(data, remove_neu_dict=None, trial_list=None, return_all=False):
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
 
 
-    ll0 = jointLL_at_MAP(data,trial_list=trial_list, remove_neu_dict=remove_neu_dict)
+    ll0, ll_prior,ll_stim,ll_spikes = jointLL_at_MAP(data,trial_list=trial_list, remove_neu_dict=remove_neu_dict)
     ll1 = 0.5 * np.sum(multiTrialInference(data, trial_list=trial_list, useGauss=1, returnLogDetPrecision=True, remove_neu_dict=remove_neu_dict)) # this is log(1/|cov|)
-    print('0.5 *  log | post cov^-1 |', ll1)
+    #print('0.5 *  log | post cov^-1 |', ll1)
 
     T = 0
     for tr in trial_list:
         T += data.trialDur[tr]
-    print('sum(K_i) * T_tot * log 2 \pi', 0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi))
-    return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2*np.pi)
+    #print('sum(K_i) * T_tot * log 2 \pi', 0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi))
+
+    if not return_all:
+        return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2*np.pi)
+
+    return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2*np.pi),  ll_prior,ll_stim,ll_spikes, ll1,  0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi)
 
 
 
@@ -146,9 +150,9 @@ if __name__ == '__main__':
     data_sub = deepcopy(data)
     data_sub.initializeParam(data.zdims)
 
-    print(2*K0 - 2*marginal_likelihood(data, trial_list=[0,1,2,6,7,8,9]))
+    #print(2*K0 - 2*marginal_likelihood(data, trial_list=[0,1,2,6,7,8,9]))
     # print(2*K1 - 2*marginal_likelihood(data_1, trial_list=[0,1,2,6,7,8,9]))
-    print(2*K0 - 2*marginal_likelihood(data_sub, trial_list=[0,1,2,6,7,8,9]))
+    #print(2*K0 - 2*marginal_likelihood(data_sub, trial_list=[0,1,2,6,7,8,9]))
 
     # print(marginal_likelihood(data, trial_list=[0,1,2],remove_neu_dict={0:[]}))
     # print(marginal_likelihood(data, trial_list=[0,1,2],remove_neu_dict={0:[8]}))
