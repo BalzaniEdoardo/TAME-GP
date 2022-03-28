@@ -2,6 +2,7 @@
 inference_syntetic_data/*
 Area_Interaction_noStim/*
 Area_Interaction_Stim/*
+Area_Inter*
 fit_cluster/*
 *.mat
 test_mpi/*
