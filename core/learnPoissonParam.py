@@ -3,9 +3,10 @@ Some of the code here is adapted from Machens et al. implementation of P-GPFA.
 """
 import numpy as np
 from scipy.optimize import minimize
-from data_processing_tools import approx_grad,block_inv, fast_stackCSRHes_memoryPreAllocation
+from data_processing_tools import approx_grad,block_inv, fast_stackCSRHes_memoryPreAllocation, compileTrialStackedObsAndLatent
 import scipy.sparse as sparse
 import csr
+
 
 def expectedLLPoisson(x, C, d, mean_post,cov_post, C1=None):
     '''
@@ -221,47 +222,6 @@ def newton_opt_CSR(func, grad, hessInv, Z0,tol=10**-8,max_iter=1000, disp_eval=T
     return Z0, feval, feval_hist
 
 
-
-# def all_trial_poissonLL(C, d, x_list, mean_post, cov_post, C1=None, isGrad=False):
-#     """
-#     Looop over trial and compute expected LL or its gradent for poisson obs
-#     :param C:
-#     :param d:
-#     :param x_list:
-#     :param mean_post:
-#     :param cov_post:
-#     :param C1:
-#     :param isGrad:
-#     :return:
-#     """
-#     if isGrad:
-#         func = grad_expectedLLPoisson
-#     else:
-#         func = expectedLLPoisson
-#     f = 0
-#     for i in range(len(x_list)):
-#         x = x_list[i]
-#         meanPost = mean_post[i]
-#         covPost = cov_post[i]
-#         f = f + func(x, C, d, meanPost, covPost, C1=C1)
-#
-#     return f
-def compileTrialStackedObsAndLatent(data, idx_latent, trial_list, T, xDim, K0, K1):
-    x = np.zeros((T, xDim))
-    mean_post = np.zeros((T, K0 + K1))
-    cov_post = np.zeros((T, K1 + K0, K1 + K0))
-    t0 = 0
-    for tr in trial_list:
-        T_tr = data.trialDur[tr]
-        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
-        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
-        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
-        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
-        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:], (0, 2, 1))
-        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
-        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
-        t0 += T_tr
-    return x, mean_post, cov_post
 
 def multiTrial_PoissonLL(W0, W1, d, data, idx_latent, trial_num=None, isGrad=False, trial_list=None, test=False):
     """

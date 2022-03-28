@@ -5,6 +5,24 @@ from numba import jit
 import csr
 from scipy.stats import multivariate_normal
 
+
+def compileTrialStackedObsAndLatent(data, idx_latent, trial_list, T, xDim, K0, K1):
+    x = np.zeros((T, xDim))
+    mean_post = np.zeros((T, K0 + K1))
+    cov_post = np.zeros((T, K1 + K0, K1 + K0))
+    t0 = 0
+    for tr in trial_list:
+        T_tr = data.trialDur[tr]
+        x[t0:t0 + T_tr, :] = data.get_observations(tr)[1][idx_latent - 1]
+        cov_post[t0:t0 + T_tr, :K0, :K0] = data.posterior_inf[tr].cov_t[0]
+        cov_post[t0:t0 + T_tr, K0:, K0:] = data.posterior_inf[tr].cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, :K0, K0:] = data.posterior_inf[tr].cross_cov_t[idx_latent]
+        cov_post[t0:t0 + T_tr, K0:, :K0] = np.transpose(cov_post[t0: t0 + T_tr, :K0, K0:], (0, 2, 1))
+        mean_post[t0:t0 + T_tr, :K0] = data.posterior_inf[tr].mean[0].T
+        mean_post[t0:t0 + T_tr, K0:] = data.posterior_inf[tr].mean[idx_latent].T
+        t0 += T_tr
+    return x, mean_post, cov_post
+
 def fast_stackCSRHes_memoryPreAllocation(vals, rowsptr, colindices, nnz, nrows, ncols, i0PTR, i0Val, newHes, sumK):
     """
     Fast stacking of csr matrix format hessian of different trials. Strongly uses the fact that across trials the
@@ -354,9 +372,40 @@ def logpdf_multnorm(x, mean, covInv, logdet):
     log2pi = np.log(2 * np.pi)
     return -0.5 * (rank * log2pi + maha + logdet)
 
+def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False):
+    popId = np.where(data.area_list == area)[0][0]
+    data_tr = data.subSampleTrial([tr])
+    trial_list = [tr]
 
+    if leave_neu_out:
+        remove_neu_dict = {popId: [neu]}
+        multiTrialInference(data_tr, trial_list=trial_list, useGauss=1, returnLogDetPrecision=False,
+                            remove_neu_dict=remove_neu_dict)
 
+    W0 = data_tr.xPar[popId]['W0']
+    W1 = data_tr.xPar[popId]['W1']
+    D =  data_tr.xPar[popId]['d']
+    w0 = W0[neu]
+    w1 = W1[neu]
+    d = D[neu]
+    T = sum(list(data_tr.trialDur.values()))
+    xdim, K0 = W0.shape
+    K1 = W1.shape[1]
+    _, mean_post, cov_post = compileTrialStackedObsAndLatent(data_tr, popId+1, trial_list, T, xdim, K0, K1)
 
+    if not W1 is None:
+        Cout = np.hstack((W0[neu], W1[neu]))
+        CC = np.outer(Cout, Cout)
+    else:
+        Cout = W0[neu]
+        CC = np.outer(W0[neu, :], W0[neu, :])
+    if use_cov:
+        rate = np.exp(0.5 * np.sum(cov_post.reshape(cov_post.shape[0], (K0 + K1) ** 2) * CC.reshape((K0 + K1) ** 2),
+                        axis=1) + d[neu] + np.einsum('j,tj->t', Cout, mean_post))
+    else:
+        rate = np.exp(d[neu] + np.einsum('j,tj->t', Cout, mean_post))
+
+    return rate
 
 
 

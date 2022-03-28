@@ -31,13 +31,11 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
         if stim.shape[1] > 0:
             mean_gauss = np.dot(stimPar['W0'],zmap[0]).T + stimPar['d']# D x T
             blk_cov_inv = block_diag(*[stimPar['PsiInv']]*T)
-            # for tk in range(mean_gauss.shape[0]):
-            #     ll += multivariate_normal.logpdf(stim[tk], mean=mean_gauss[tk],cov=cov_gauss)
+
             val = logpdf_multnorm(stim.flatten(), mean_gauss.flatten(), blk_cov_inv, log_det_gauss*stim.shape[0])
             ll_stim += val
             ll += val
-        # print('gauss ', perf_counter()-t0)
-        # poisson likelihood
+
 
         for k in range(len(xPar)):
             W0 = xPar[k]['W0']
