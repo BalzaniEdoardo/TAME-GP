@@ -309,7 +309,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
             W1 = xPar[k]['W1']
             d = xPar[k]['d']
 
-            keep_neu = np.ones(xList[0].shape[1], dtype=bool)
+            keep_neu = np.ones(xList[k].shape[1], dtype=bool)
             if k in remove_neu_dict.keys():
                 keep_neu[remove_neu_dict[k]] = False
                 xList[k] = xList[k][:, keep_neu]

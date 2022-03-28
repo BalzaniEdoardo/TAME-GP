@@ -384,10 +384,8 @@ def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False):
 
     W0 = data_tr.xPar[popId]['W0']
     W1 = data_tr.xPar[popId]['W1']
-    D =  data_tr.xPar[popId]['d']
-    w0 = W0[neu]
-    w1 = W1[neu]
-    d = D[neu]
+    D = data_tr.xPar[popId]['d']
+
     T = sum(list(data_tr.trialDur.values()))
     xdim, K0 = W0.shape
     K1 = W1.shape[1]
@@ -401,9 +399,9 @@ def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False):
         CC = np.outer(W0[neu, :], W0[neu, :])
     if use_cov:
         rate = np.exp(0.5 * np.sum(cov_post.reshape(cov_post.shape[0], (K0 + K1) ** 2) * CC.reshape((K0 + K1) ** 2),
-                        axis=1) + d[neu] + np.einsum('j,tj->t', Cout, mean_post))
+                        axis=1) + D[neu] + np.einsum('j,tj->t', Cout, mean_post))
     else:
-        rate = np.exp(d[neu] + np.einsum('j,tj->t', Cout, mean_post))
+        rate = np.exp(D[neu] + np.einsum('j,tj->t', Cout, mean_post))
 
     return rate
 
