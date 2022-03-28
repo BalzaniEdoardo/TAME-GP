@@ -379,7 +379,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
             string = 'trial %d precison invert precison, ok \n' % trNum
             fh.write(string)
             fh.close()
-    return zbar, laplAppCov
+    return zbar, laplAppCov, res.fun
 
 def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1,
                         returnLogDetPrecision=False, remove_neu_dict=None,savepath=None, rank=None):
@@ -405,6 +405,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
     if returnLogDetPrecision:
         logDetPrecision = []
     cnt = 1
+    nll = 0
     for tr in trial_list:
         if plot_trial:
             print('infer trial: %d/%d'%(cnt,len(trial_list)))
@@ -434,8 +435,9 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         if returnLogDetPrecision:
             logDetPrecision.append(inferTrial(data, tr, zbar=zbar, useGauss=useGauss, returnLogDetPrecision=returnLogDetPrecision,remove_neu_dict=remove_neu_dict))
         else:
-            meanPost, covPost = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict,
+            meanPost, covPost, val = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict,
                                            savepath=savepath,rank=rank)
+            nll += val
             if savepath and (rank == 0):
                 with open(savepath, 'a') as fh:
                     string = 'inference ok\n'
@@ -472,7 +474,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         return list_mean_post,list_cov_post
     if returnLogDetPrecision:
         return logDetPrecision
-    return
+    return nll
 
 
 

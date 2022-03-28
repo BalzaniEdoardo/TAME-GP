@@ -77,10 +77,15 @@ def marginal_likelihood(data, remove_neu_dict=None, trial_list=None, return_all=
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
 
-
-    ll0, ll_prior,ll_stim,ll_spikes = jointLL_at_MAP(data,trial_list=trial_list, remove_neu_dict=remove_neu_dict)
-    ll1 = 0.5 * np.sum(multiTrialInference(data, trial_list=trial_list, useGauss=1, returnLogDetPrecision=True, remove_neu_dict=remove_neu_dict)) # this is log(1/|cov|)
-    #print('0.5 *  log | post cov^-1 |', ll1)
+    if not remove_neu_dict is None:
+        data_inf = deepcopy(data)
+        # infer posterior without the neuron
+        multiTrialInference(data_inf, trial_list=trial_list, useGauss=1, returnLogDetPrecision=False,
+                        remove_neu_dict=remove_neu_dict)
+    else:
+        data_inf = data
+    ll0, ll_prior,ll_stim,ll_spikes = jointLL_at_MAP(data_inf,trial_list=trial_list, remove_neu_dict=remove_neu_dict)
+    ll1 = 0.5 * np.sum(multiTrialInference(data_inf, trial_list=trial_list, useGauss=1, returnLogDetPrecision=True, remove_neu_dict=remove_neu_dict)) # this is log(1/|cov|)
 
     T = 0
     for tr in trial_list:

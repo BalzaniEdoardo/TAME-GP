@@ -5,7 +5,9 @@ Created on Mon Mar 21 14:41:58 2022
 
 @author: Edoardo Balzani & Pedro Herrera Vidal
 """
-
+import sys
+sys.path.append('../core/')
+from data_structure import *
 import numpy as np
 from sklearn.decomposition import PCA, FactorAnalysis
 
@@ -13,65 +15,118 @@ from scipy.linalg  import orthogonal_procrustes
 from scipy.spatial import procrustes
 from scipy.stats import multivariate_normal
 import matplotlib.pylab as plt
+from copy import deepcopy
 
+class probCCA_MLE(object):
+    def __init__(self,X, Y, latentDim=2):
+        # prob CCA with analytic solution
+        cov = np.cov(np.hstack((X,Y)).T)
+        # standard cca for weight updates
+        dim_X = X.shape[1]
+        ee, U = np.linalg.eigh(cov[:dim_X, :dim_X])
+        ee = np.abs(ee) # should be
+        srt_idx = np.argsort(ee)
+        ee = ee[srt_idx]
+        U = U[:, srt_idx]
+        ee = ee[::-1]
+        U = U[:, ::-1]
+        sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
+        ee2, U2 = np.linalg.eigh(cov[dim_X:, dim_X:])
+        srt_idx = np.argsort(ee2)
+        ee2 = ee2[srt_idx]
+        U2 = U2[:, srt_idx]
+        ee2 = ee2[::-1]
+        U2 = U2[:, ::-1]
+        sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
+        M = np.dot(np.dot(np.linalg.pinv(sqrtY11), cov[:dim_X, dim_X:]), np.linalg.pinv(sqrtY22))
+        VV1, cancorr, VV2 = np.linalg.svd(M)
+    
+        # std canonical directions & mle proj
+        U = np.dot(np.linalg.pinv(sqrtY11), VV1)
+        V = np.dot(np.linalg.pinv(sqrtY22), VV2.T)
+        Mi = np.diag(np.sqrt(cancorr[:latentDim]))
+        WX = np.dot(np.dot(cov[:dim_X,:dim_X], U[:,:latentDim]), Mi)
+        WY = np.dot(np.dot(cov[dim_X:, dim_X:], V[:,:latentDim]),Mi)
+        muX = X.mean(axis=0)
+        muY = Y.mean(axis=0)
+        PhiX = cov[:dim_X,:dim_X] - np.dot(WX, WX.T)
+        PhiY = cov[dim_X:, dim_X:] - np.dot(WY, WY.T)
+        
+        self.WX = WX
+        self.WY = WY
+        self.muX = muX
+        self.muY = muY
+        self.U = U
+        self.V = V
+        self.Mi = Mi
+        self.PhiX = PhiX
+        self.PhiY = PhiY
+        self.latentDim = latentDim
+        self.X = X
+        self.Y = Y
+        
+        E_z_X, E_z_Y, E_z_XY, cov_z_X, cov_z_Y, cov_z_XY = self.project(X,Y)
+        # E_z_X = np.dot(np.dot(Mi.T, U[:,:latentDim].T), (X - muX).T).T
+        # E_z_Y = np.dot(np.dot(Mi.T, V[:,:latentDim].T), (Y - muY).T).T
+        # cov_z_X = np.eye(latentDim) - np.dot(Mi,Mi.T)
+        # cov_z_Y = np.eye(latentDim) - np.dot(Mi, Mi.T)
+    
+        # sigma_zx = np.block([WX.T,WY.T])
+        s00 = np.dot(WX, WX.T) + PhiX
+        s11 = np.dot(WY, WY.T) + PhiY
+        s10 = np.dot(WY, WX.T)
+        sigma_xx_inv = np.linalg.pinv(np.block([[s00, s10.T], [s10, s11]]))
+        # muXY = np.hstack((muX, muY))
+        # E_z_XY = np.einsum('ij,tj->ti', np.dot(sigma_zx, sigma_xx_inv), np.hstack((X,Y)) - muXY)
+    
+        # cov_z_XY = np.linalg.pinv( np.eye(latentDim) + np.dot(np.dot(WX.T, np.linalg.pinv(PhiX)),WX) +
+        #                           np.dot(np.dot(WY.T, np.linalg.pinv(PhiY)), WY))
+    
+        einv = np.abs(np.linalg.eigh(sigma_xx_inv)[0])
+        log_det_sigma_xx = np.log(1/einv).sum()
+        n_half = X.shape[0]*0.5
+        log_like = n_half * (dim_X + Y.shape[1]) * np.log(np.pi*2) + n_half * log_det_sigma_xx +\
+                   n_half * np.dot(cov.flatten(), sigma_xx_inv.T.flatten())
+        self.log_like = log_like
+        self.cancorr = cancorr
+        return 
+    
+    def ccaFullOutput(self):
+        X = self.X
+        Y = self.Y
+        E_z_X, E_z_Y, E_z_XY, cov_z_X, cov_z_Y, cov_z_XY = self.project( X, Y)
+        return E_z_X, E_z_Y, E_z_XY, cov_z_X, cov_z_Y, cov_z_XY, self.WX, self.WY, self.PhiX, self.PhiY, self.muX, self.muY, self.cancorr,self.log_like
 
-def probCCA_MLE(X, Y, latentDim=2):
-    # prob CCA with analytic solution
-    cov = np.cov(np.hstack((X,Y)).T)
-    # standard cca for weight updates
-    dim_X = X.shape[1]
-    ee, U = np.linalg.eigh(cov[:dim_X, :dim_X])
-    ee = np.abs(ee) # should be
-    srt_idx = np.argsort(ee)
-    ee = ee[srt_idx]
-    U = U[:, srt_idx]
-    ee = ee[::-1]
-    U = U[:, ::-1]
-    sqrtY11 = np.dot(np.dot(U, np.diag(np.sqrt(ee))), U.T)
-    ee2, U2 = np.linalg.eigh(cov[dim_X:, dim_X:])
-    srt_idx = np.argsort(ee2)
-    ee2 = ee2[srt_idx]
-    U2 = U2[:, srt_idx]
-    ee2 = ee2[::-1]
-    U2 = U2[:, ::-1]
-    sqrtY22 = np.dot(np.dot(U2, np.diag(np.sqrt(ee2))), U2.T)
-    M = np.dot(np.dot(np.linalg.pinv(sqrtY11), cov[:dim_X, dim_X:]), np.linalg.pinv(sqrtY22))
-    VV1, cancorr, VV2 = np.linalg.svd(M)
-
-    # std canonical directions & mle proj
-    U = np.dot(np.linalg.pinv(sqrtY11), VV1)
-    V = np.dot(np.linalg.pinv(sqrtY22), VV2.T)
-    Mi = np.diag(np.sqrt(cancorr[:latentDim]))
-    WX = np.dot(np.dot(cov[:dim_X,:dim_X], U[:,:latentDim]), Mi)
-    WY = np.dot(np.dot(cov[dim_X:, dim_X:], V[:,:latentDim]),Mi)
-    muX = X.mean(axis=0)
-    muY = Y.mean(axis=0)
-    PhiX = cov[:dim_X,:dim_X] - np.dot(WX, WX.T)
-    PhiY = cov[dim_X:, dim_X:] - np.dot(WY, WY.T)
-    E_z_X = np.dot(np.dot(Mi.T, U[:,:latentDim].T), (X - muX).T).T
-    E_z_Y = np.dot(np.dot(Mi.T, V[:,:latentDim].T), (Y - muY).T).T
-    cov_z_X = np.eye(latentDim) - np.dot(Mi,Mi.T)
-    cov_z_Y = np.eye(latentDim) - np.dot(Mi, Mi.T)
-
-    sigma_zx = np.block([WX.T,WY.T])
-    s00 = np.dot(WX, WX.T) + PhiX
-    s11 = np.dot(WY, WY.T) + PhiY
-    s10 = np.dot(WY, WX.T)
-    sigma_xx_inv = np.linalg.pinv(np.block([[s00, s10.T], [s10, s11]]))
-    muXY = np.hstack((muX, muY))
-    E_z_XY = np.einsum('ij,tj->ti', np.dot(sigma_zx, sigma_xx_inv), np.hstack((X,Y)) - muXY)
-
-    cov_z_XY = np.linalg.pinv( np.eye(latentDim) + np.dot(np.dot(WX.T, np.linalg.pinv(PhiX)),WX) +
-                              np.dot(np.dot(WY.T, np.linalg.pinv(PhiY)), WY))
-
-    einv = np.abs(np.linalg.eigh(sigma_xx_inv)[0])
-    log_det_sigma_xx = np.log(1/einv).sum()
-    n_half = X.shape[0]*0.5
-    log_like = n_half * (dim_X + Y.shape[1]) * np.log(np.pi*2) + n_half * log_det_sigma_xx +\
-               n_half * np.dot(cov.flatten(), sigma_xx_inv.T.flatten())
-
-    return E_z_X, E_z_Y, E_z_XY, cov_z_X, cov_z_Y, cov_z_XY, WX, WY, PhiX, PhiY, muX, muY,cancorr,log_like, np.dot(Mi.T, U[:,:latentDim].T)
-
+    
+    def project(self, X, Y):
+        WX = self.WX
+        WY = self.WY
+        muX = self.muX
+        muY = self.muY
+        U = self.U
+        V = self.V
+        Mi = self.Mi
+        PhiX = self.PhiX
+        PhiY = self.PhiY
+        
+        latentDim = self.latentDim
+        E_z_X = np.dot(np.dot(Mi.T, U[:,:latentDim].T), (X - muX).T).T
+        E_z_Y = np.dot(np.dot(Mi.T, V[:,:latentDim].T), (Y - muY).T).T
+        cov_z_X = np.eye(latentDim) - np.dot(Mi,Mi.T)
+        cov_z_Y = np.eye(latentDim) - np.dot(Mi, Mi.T)
+    
+        sigma_zx = np.block([WX.T,WY.T])
+        s00 = np.dot(WX, WX.T) + PhiX
+        s11 = np.dot(WY, WY.T) + PhiY
+        s10 = np.dot(WY, WX.T)
+        sigma_xx_inv = np.linalg.pinv(np.block([[s00, s10.T], [s10, s11]]))
+        muXY = np.hstack((muX, muY))
+        E_z_XY = np.einsum('ij,tj->ti', np.dot(sigma_zx, sigma_xx_inv), np.hstack((X,Y)) - muXY)
+    
+        cov_z_XY = np.linalg.pinv( np.eye(latentDim) + np.dot(np.dot(WX.T, np.linalg.pinv(PhiX)),WX) +
+                                  np.dot(np.dot(WY.T, np.linalg.pinv(PhiY)), WY))
+        return E_z_X, E_z_Y, E_z_XY, cov_z_X, cov_z_Y, cov_z_XY
+        
 
 def probPCA(X, latentDim):
     """
@@ -183,11 +238,12 @@ class LSM_Procrustes():
         self.LogLs_ = []
         self.aic_ = []
         for dim in range_:
+            tmp = probCCA_MLE(self.sm_data_[self.pop_[0]],
+                                    self.sm_data_[self.pop_[1]],dim)
             _, _, _, _, _, _,\
                 WX, WY, PhiX, PhiY, muX, muY,\
-                    _, log_like, _ = \
-                        probCCA_MLE(self.sm_data_[self.pop_[0]],
-                                    self.sm_data_[self.pop_[1]],dim)
+                    _, log_like = \
+                        tmp.ccaFullOutput()
             self.LogLs_.append(log_like)
             npar = np.prod(WX.shape) + np.prod(WY.shape) + muX.shape[0] +\
                 muY.shape[0] + np.prod(PhiX.shape) + np.prod(PhiY.shape)
@@ -201,6 +257,30 @@ class LSM_Procrustes():
             fa = FactorAnalysis(n_components=zDim)
             self.Z_[ii] = fa.fit_transform(self.sm_data_[ii])
             
+    def get_latents_fromGPCCA_file(self, path, use='train'): # zDim should be set to argmax(LL)
+        data_dict = np.load(path,allow_pickle=True)['post_%s'%use].all()
+        self.pop_ = list(data_dict.keys())
+        
+        self.Z_ = {}
+        first = True
+        for ii in self.pop_:
+            post_inf  = data_dict[ii]
+            if first:
+                first=False
+                T = 0
+                for tr in post_inf.keys():
+                    T += post_inf[tr].mean[0].shape[1]
+                
+                
+            Z_all = np.zeros((T, post_inf[tr].mean[0].shape[0]))
+            i0 = 0
+            for tr in post_inf.keys():
+                T_tr = post_inf[tr].mean[0].shape[1]
+                Z_all[i0:i0+T_tr] = post_inf[tr].mean[0].T
+                i0 += T_tr
+                
+            self.Z_[ii] = deepcopy(Z_all)
+            
     def get_latents_PPCA(self, zDim = 2): # zDim should be set to argmax(LL)
         self.Z_ = {}
         
@@ -212,7 +292,9 @@ class LSM_Procrustes():
         assert(len(self.pop_)==2)
         # this works only for 2 pops
         self.Z_ = {}
-        tmp = probCCA_MLE(self.sm_data_[self.pop_[0]],self.sm_data_[self.pop_[1]],zDim) #PPCA_EM(temp_cov, self.xDim_[ii], zDim, self.T_[ii])
+        tmp = probCCA_MLE(self.sm_data_[self.pop_[0]],
+                                    self.sm_data_[self.pop_[1]],zDim)
+        tmp = tmp.ccaFullOutput()
         self.Z_[self.pop_[0]] = tmp[0]
         self.Z_[self.pop_[1]] = tmp[1]
             
@@ -253,8 +335,8 @@ class LSM_Procrustes():
 
 if __name__ == '__main__':
     from scipy.stats import zscore
-    #load_dat = 'spikes_sim_3hz_median.npz' # mid rate
-    load_dat = 'spikes_sim.npz' # high rate
+    load_dat = 'spikes_sim_3hz_median.npz' # mid rate
+    #load_dat = 'spikes_sim.npz' # high rate
     plt.close('all')
     FA_align = LSM_Procrustes()
     FA_align.import_data('/Users/edoardo/Work/Code/FF_dimReduction/P-GPCCA_analyze/Area_Interaction_noStim/'+load_dat)
@@ -276,6 +358,11 @@ if __name__ == '__main__':
     PPCA_align.get_LatDim_PPCA(range_=np.arange(1,12))
     PPCA_align.get_latents_PPCA(2)
     PPCA_align.procrustean_align()
+    
+    
+    PGPCCA_align = LSM_Procrustes()
+    PGPCCA_align.get_latents_fromGPCCA_file('/Users/edoardo/Work/Code/FF_dimReduction/P-GPCCA_analyze/Area_Interaction_noStim/single_area_latent_posterior_2_midRate.npz')
+    PGPCCA_align.procrustean_align()
     
     plt_end = 10
     plt.figure(figsize=(5,3))
