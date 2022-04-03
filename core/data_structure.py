@@ -9,7 +9,7 @@ from sklearn.cross_decomposition import CCA
 
 class P_GPCCA(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001,
-                 transposeY = False):
+                 transposeY = False, storeAllCovariates=False):
         """
         :param preProc: structure with attributes:
             * numTrials: int, number of trials
@@ -55,12 +55,18 @@ class P_GPCCA(object):
             non_nan_trial = {}
             for tr in range(self.preproc.numTrials):
                 non_nan_trial[tr] = np.ones(self.trialDur[tr], dtype=bool)
-            for var in var_list:
+            if not storeAllCovariates:
+                vv_list = var_list
+            else:
+                vv_list = self.preproc.covariates.keys()
+            for var in vv_list:
                 cov[var] = {}
 
                 for tr in range(self.preproc.numTrials):
                     cov[var][tr] = self.preproc.covariates[var][tr]
-                    non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
+                    if var in var_list:
+                        # set nan filter only for the one used in the fit
+                        non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
 
             # remove nan
             rm_trials = []
@@ -70,7 +76,7 @@ class P_GPCCA(object):
                 self.trialDur[tr] = np.sum(non_nan_trial[tr])
                 if self.trialDur[tr] < 5:
                     rm_trials.append(tr)
-                for var in var_list:
+                for var in vv_list:
                     try:
                         cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
                     except:
@@ -79,7 +85,7 @@ class P_GPCCA(object):
             for tr in np.unique(rm_trials):
                 data.pop(tr)
                 self.trialDur.pop(tr)
-                for var in var_list:
+                for var in vv_list:
                     try:
                         cov[var][tr].pop(tr)
                     except:

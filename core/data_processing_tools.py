@@ -372,38 +372,6 @@ def logpdf_multnorm(x, mean, covInv, logdet):
     log2pi = np.log(2 * np.pi)
     return -0.5 * (rank * log2pi + maha + logdet)
 
-def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False):
-    popId = np.where(data.area_list == area)[0][0]
-    data_tr = data.subSampleTrial([tr])
-    trial_list = [tr]
-
-    if leave_neu_out:
-        remove_neu_dict = {popId: [neu]}
-        multiTrialInference(data_tr, trial_list=trial_list, useGauss=1, returnLogDetPrecision=False,
-                            remove_neu_dict=remove_neu_dict)
-
-    W0 = data_tr.xPar[popId]['W0']
-    W1 = data_tr.xPar[popId]['W1']
-    D = data_tr.xPar[popId]['d']
-
-    T = sum(list(data_tr.trialDur.values()))
-    xdim, K0 = W0.shape
-    K1 = W1.shape[1]
-    _, mean_post, cov_post = compileTrialStackedObsAndLatent(data_tr, popId+1, trial_list, T, xdim, K0, K1)
-
-    if not W1 is None:
-        Cout = np.hstack((W0[neu], W1[neu]))
-        CC = np.outer(Cout, Cout)
-    else:
-        Cout = W0[neu]
-        CC = np.outer(W0[neu, :], W0[neu, :])
-    if use_cov:
-        rate = np.exp(0.5 * np.sum(cov_post.reshape(cov_post.shape[0], (K0 + K1) ** 2) * CC.reshape((K0 + K1) ** 2),
-                        axis=1) + D[neu] + np.einsum('j,tj->t', Cout, mean_post))
-    else:
-        rate = np.exp(D[neu] + np.einsum('j,tj->t', Cout, mean_post))
-
-    return rate
 
 
 
