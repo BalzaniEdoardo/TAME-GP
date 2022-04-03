@@ -56,9 +56,9 @@ class P_GPCCA(object):
             for tr in range(self.preproc.numTrials):
                 non_nan_trial[tr] = np.ones(self.trialDur[tr], dtype=bool)
             if not storeAllCovariates:
-                vv_list = var_list
+                vv_list = list(var_list)
             else:
-                vv_list = self.preproc.covariates.keys()
+                vv_list = list(self.preproc.covariates.keys())
             for var in vv_list:
                 cov[var] = {}
 
@@ -80,7 +80,8 @@ class P_GPCCA(object):
                     try:
                         cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
                     except:
-                        rm_trials += [tr]
+                        if var in var_list:
+                            rm_trials += [tr]
 
             for tr in np.unique(rm_trials):
                 data.pop(tr)
