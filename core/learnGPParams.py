@@ -142,16 +142,22 @@ def dK_dlamba_RBF(lam_0, Tvec, eps, binSize):
     return dK
 
 
-def all_trial_GPLL(lam, data, idx_latent, block_trials=None, isGrad=False):
+def all_trial_GPLL(lam, data, idx_latent, block_trials=None, isGrad=False,trial_list=None):
     if block_trials is None:
         block_trials = len(data.trialDur.keys())
-    all_trials = list(data.trialDur.keys())
-    trial_num = len(all_trials)
+    if trial_list is None:
+        all_trials = list(data.trialDur.keys())
+        trial_num = len(all_trials)
+        trial_list = []
+        nBlocks = int(np.ceil(len(all_trials) / block_trials))
+        for k in range(nBlocks):
+            trial_list.append(all_trials[k * block_trials:(k + 1) * block_trials])
+    else:
+        trial_list = np.array(trial_list).reshape(-1,1)
+        trial_num = 1. # set norm to 1 to avoid weighting differently in distributed processing
+    
 
-    trial_list = []
-    nBlocks = int(np.ceil(len(all_trials) /block_trials))
-    for k in range(nBlocks):
-        trial_list.append(all_trials[k*block_trials:(k+1)*block_trials])
+
     f = 0
     for tl in trial_list:
         mu_list = []
@@ -161,14 +167,14 @@ def all_trial_GPLL(lam, data, idx_latent, block_trials=None, isGrad=False):
             Tmax = max(Tmax,data.posterior_inf[tr].mean[idx_latent].shape[1])
             mu_list.append(data.posterior_inf[tr].mean[idx_latent])
             cov_list.append(data.posterior_inf[tr].cov_k[idx_latent])
-            try:
-                f = f + allTrial_grad_expectedLLGPPrior(lam , mu_list, cov_list, data.binSize,
-                                                eps=data.epsNoise,Tmax=Tmax,isGrad=isGrad, trial_num=trial_num)
-            except np.linalg.LinAlgError:
-                if isGrad:
-                    return -np.ones(lam.shape)*np.inf
-                else:
-                    return -np.inf
+        try:
+            f = f + allTrial_grad_expectedLLGPPrior(lam , mu_list, cov_list, data.binSize,
+                                            eps=data.epsNoise,Tmax=Tmax,isGrad=isGrad, trial_num=trial_num)
+        except np.linalg.LinAlgError:
+            if isGrad:
+                return -np.ones(lam.shape)*np.inf
+            else:
+                return -np.inf
 
     # if isGrad:
     #     print( np.linalg.norm(f))

@@ -298,17 +298,7 @@ if rank != 0:
 
 
 else:
-    #t0 = perf_counter()
-    #with open(iter_save, 'a') as fh:
-    #    fh.write('Factorized EM start\n')
-    #    fh.close()
-    #if not hasattr(data_cca, 'posterior_inf'):
-    #    expectation_maximization_factorized(data_cca, maxIter=20, trialDur_variable=True,
-    #                                    trial_block=len(data_cca.trialDur.keys()), useNewton=True)
-    #t1 = perf_counter()
-    #with open(iter_save, 'a') as fh:
-    #    fh.write('Factorized EM end\ntot time: %f sec\n' % (t1 - t0))
-    #    fh.close()
+
     if maxIter > 0:
         ll = mpi_em(data_cca, tr_dict, maxIter=maxIter, tol=10 ** -3, method='sparse-Newton', tolPoissonOpt=10 ** -12,
            boundsW0=None, boundsW1=None, boundsD=None,save_every=1,save_path=save_path,iter_save=iter_save)

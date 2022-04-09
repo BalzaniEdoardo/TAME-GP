@@ -350,7 +350,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
             disp=True
         else:
             disp=False
-        res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp':disp})
+        res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp':False})
     except Exception as e:
         if savepath and (rank == 0):
             with open(savepath, 'a') as fh:
