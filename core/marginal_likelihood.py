@@ -71,7 +71,7 @@ def jointLL_at_MAP(data, trial_list=None, remove_neu_dict=None):
     # print('LL prior', ll_prior)
     return ll,ll_prior,ll_stim,ll_spikes
 
-def marginal_likelihood(data, remove_neu_dict=None, trial_list=None, return_all=False):
+def marginal_likelihood(data, remove_neu_dict=None, trial_list=None, return_all=False,return_inf=False):
     if trial_list is None:
         trial_list = list(data.trialDur.keys())
 
@@ -89,11 +89,13 @@ def marginal_likelihood(data, remove_neu_dict=None, trial_list=None, return_all=
     for tr in trial_list:
         T += data.trialDur[tr]
     #print('sum(K_i) * T_tot * log 2 \pi', 0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi))
-
+    if return_inf:
+        return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi), data_inf
     if not return_all:
         return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2*np.pi)
 
     return ll0 - ll1 + 0.5 * np.sum(data.zdims) * T * np.log(2*np.pi),  ll_prior,ll_stim,ll_spikes, ll1,  0.5 * np.sum(data.zdims) * T * np.log(2 * np.pi)
+
 
 
 

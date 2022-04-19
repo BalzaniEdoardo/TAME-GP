@@ -477,7 +477,7 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
     return nll
 
 
-def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False):
+def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False, comp_both=False):
     popId = np.where(np.array(data.area_list) == area)[0][0]
     data_tr = data.subSampleTrial([tr])
     trial_list = [tr]
@@ -507,6 +507,10 @@ def predict_rate_neu(data, area, tr, neu, leave_neu_out=False, use_cov=False):
                         axis=1) + D[neu] + np.einsum('j,tj->t', Cout, mean_post))
     else:
         rate = np.exp(D[neu] + np.einsum('j,tj->t', Cout, mean_post))
+    if comp_both:
+        rate_cov = np.exp(0.5 * np.sum(cov_post.reshape(cov_post.shape[0], (K0 + K1) ** 2) * CC.reshape((K0 + K1) ** 2),
+                                   axis=1) + D[neu] + np.einsum('j,tj->t', Cout, mean_post))
+        return rate,rate_cov
 
     return rate
 
