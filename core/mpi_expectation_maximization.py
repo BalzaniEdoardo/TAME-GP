@@ -78,7 +78,7 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
         with open(iter_save, 'a') as fh:
             fh.write('infer root 0 - start\n')
             fh.close()
-        multiTrialInference(data, trial_list=trial_dict[0], plot_trial=True)
+        nLL = multiTrialInference(data, trial_list=trial_dict[0], plot_trial=True)
         t1 = perf_counter()
         print('infer root 0 - end')
         with open(iter_save, 'a') as fh:
@@ -113,7 +113,7 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
         with open(iter_save, 'a') as fh:
             fh.write('Gauss M-Step tot time: %f sec\n'%(t1-t0))
             fh.close()
-        nLL = -full_GaussLL(data)
+        #nLL = -full_GaussLL(data)
 
         # learn Poisson obs param
         t0 = perf_counter()
@@ -160,9 +160,10 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                     data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
                     data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
                     data.xPar[k]['d'] = res.x[N * (K0 + K1):]
-                    nLL += res.fun
+                    #nLL += res.fun
                 else:
-                    nLL += func(parStack)
+                    pass
+                    #nLL += func(parStack)
 
             elif method == 'sparse-Newton':
                 C = data.xPar[k]['W0']
@@ -184,7 +185,7 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                 data.xPar[k]['W0'] = par_optim[:N * K0].reshape(N, K0)
                 data.xPar[k]['W1'] = par_optim[N * K0:N * (K0 + K1)].reshape(N, K1)
                 data.xPar[k]['d'] = par_optim[N * (K0 + K1):]
-                nLL += feval / len(data.trialDur.keys())
+                #nLL += feval / len(data.trialDur.keys())
 
         t1 = perf_counter()
         with open(iter_save, 'a') as fh:

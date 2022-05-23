@@ -101,13 +101,13 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
         print('EM iteration: %d/%d'%(ii+1,maxIter))
         # infer latent
         print('- E-step')
-        multiTrialInference(data,plot_trial=True)
+        nLL = multiTrialInference(data,plot_trial=True)
         if ii == 0:
             print('initial LL:', computeLL(data)[0],'\n')
         # learn gaussian params
         print('- Gaussian M-step')
         learn_GaussianParams(data, test=False, isMPI=False)
-        nLL = -full_GaussLL(data)
+
 
         # learn Poisson obs param
         for k in range(len(data.zdims) - 1):
@@ -151,15 +151,15 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                     data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
                     data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
                     data.xPar[k]['d'] = res.x[N * (K0 + K1):]
-                    nLL += res.fun
+
                 else:
-                    nLL += func(parStack)
+                    pass
             elif method == 'BADS':
                 C, C1, d, f = gpOptim.bads_optimPoisson(data, k)
                 data.xPar[k]['W0'] = C
                 data.xPar[k]['W1'] = C1
                 data.xPar[k]['d'] = d
-                nLL += f/len(data.trialDur.keys())
+
 
             elif method == 'sparse-Newton':
                 C = data.xPar[k]['W0']
@@ -181,7 +181,7 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                 data.xPar[k]['W0'] = par_optim[:N * K0].reshape(N, K0)
                 data.xPar[k]['W1'] = par_optim[N * K0:N * (K0 + K1)].reshape(N, K1)
                 data.xPar[k]['d'] = par_optim[N * (K0 + K1):]
-                nLL += feval / len(data.trialDur.keys())
+
 
         # learn GP param
         for k in range(len(data.zdims)):
@@ -193,7 +193,7 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                 if len(f.shape) == 0:
                     f = np.reshape(f,1)
                 data.priorPar[k]['tau'] = f
-                nLL += g
+
                 
             else:
                 lam0 = 2 * np.log(((tau * data.binSize/1000)))
@@ -204,10 +204,10 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                 res = minimize(func, lam0, jac=gr_func, method='L-BFGS-B', tol=10 ** -12)
                 if res.success or res.fun < func(lam0):
                     data.priorPar[k]['tau'] = np.exp(res.x/2)*1000/data.binSize
-                    nLL += res.fun
+
                     print('nLL prior before/after optim:',f0,res.fun)
                 else:
-                    nLL += func(lam0)
+                    pass
 
         LL_list.append(-nLL)
         print('current LL: ',LL_list[-1])
