@@ -152,8 +152,6 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                     data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
                     data.xPar[k]['d'] = res.x[N * (K0 + K1):]
 
-                else:
-                    pass
             elif method == 'BADS':
                 C, C1, d, f = gpOptim.bads_optimPoisson(data, k)
                 data.xPar[k]['W0'] = C
