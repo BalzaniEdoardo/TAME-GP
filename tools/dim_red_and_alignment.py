@@ -179,6 +179,40 @@ def probPCA(X, latentDim):
     return E_z_X, cov_z_X, W, sigma2, mu, var_expl, log_like
 
 
+def probCCA_EM(X, Y, latentDim=2,iternum=100):
+    cov = np.cov(np.hstack((X,Y)).T)
+    Phi = np.eye(X.shape[1]+Y.shape[1])
+    W0 = 0.001*np.random.normal(size=(X.shape[1]+Y.shape[1], latentDim))
+    cov = np.matrix(cov)
+    W0 = np.matrix(W0)
+    Phi = np.matrix(Phi)
+    PhiInv = np.linalg.inv(Phi)
+    for itr in range(iternum):
+        print(itr+1,iternum)
+        M = np.linalg.pinv(np.eye(latentDim) + np.dot(np.dot(W0.T,Phi),W0))
+        W0 = cov * PhiInv * W0 * M * np.linalg.inv(M + M * W0.T * PhiInv * cov * PhiInv * W0 * M)
+        Phi = cov - cov * PhiInv * W0 * M * W0.T
+        Phi[:X.shape[1],X.shape[1]:] = 0
+        Phi[X.shape[1]:,:X.shape[1]] = 0
+        PhiInv = np.linalg.inv(Phi)
+    WX = W0[:X.shape[1]]
+    WY = W0[X.shape[1]:]
+    PhiX = Phi[:X.shape[1],:X.shape[1]]
+    PhiY = Phi[X.shape[1]:,X.shape[1]:]
+    cov_xx = cov[:X.shape[1],:X.shape[1]]
+    cov_yy = cov[X.shape[1]:,X.shape[1]:]
+
+    E_z_X = (WX.T * np.dot(np.linalg.inv(cov_xx), (X-X.mean(axis=0)).T)).T
+    E_z_Y = (WY.T * np.dot(np.linalg.inv(cov_yy), (Y-Y.mean(axis=0)).T)).T
+
+    WX = np.array(WX)
+    WY = np.array(WY)
+    PhiX = np.array(PhiX)
+    PhiY = np.array(PhiY)
+    E_z_X = np.array(E_z_X)
+    E_z_Y = np.array(E_z_Y)
+    return E_z_X,E_z_Y,WX,WY,PhiX,PhiY
+    
 
 class LSM_Procrustes():
     """
@@ -297,6 +331,15 @@ class LSM_Procrustes():
         tmp = tmp.ccaFullOutput()
         self.Z_[self.pop_[0]] = tmp[0]
         self.Z_[self.pop_[1]] = tmp[1]
+
+    def get_latents_PCCAEM(self, zDim=2):
+        assert (len(self.pop_) == 2)
+        # this works only for 2 pops
+        self.Z_EM = {}
+        tmp = probCCA_EM(self.sm_data_[self.pop_[0]],
+                          self.sm_data_[self.pop_[1]], zDim, 100)
+        self.Z_EM[self.pop_[0]] = tmp[0]
+        self.Z_EM[self.pop_[1]] = tmp[1]
             
     def procrustean_align(self, method ='regular'): # note that this requires tied latent dim.
         self.Z_align_ = {}
@@ -352,7 +395,8 @@ if __name__ == '__main__':
     PCCA_align.get_latents_PCCA(2)
     PCCA_align.procrustean_align()
 
-    
+    PCCA_align.get_latents_PCCAEM(2)
+
     PPCA_align = LSM_Procrustes()
     PPCA_align.import_data('/Users/edoardo/Work/Code/FF_dimReduction/P-GPCCA_analyze/Area_Interaction_noStim/'+load_dat)
     PPCA_align.get_LatDim_PPCA(range_=np.arange(1,12))

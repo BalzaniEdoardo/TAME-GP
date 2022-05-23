@@ -81,8 +81,14 @@ class dataGen(object):
 
             for k in range(D):
                 preproc.covariates['var%d' % k].append(x1[:, k])
-
+            
+            r2 = np.exp(np.einsum('ij,tj->ti', W02, z) +
+                                                   np.einsum('ij,tj->ti', W12, z2) + d2)
+            r3 = np.exp(np.einsum('ij,tj->ti', W03, z) +
+                                                   np.einsum('ij,tj->ti', W13, z3) + d3)
+        
             preproc.data.append({'Y': np.hstack([x2, x3])})
+            preproc.data[-1]['R'] = np.hstack([r2, r3])
 
             ground_truth_latent.append(np.hstack((z,z2,z3)))
 
