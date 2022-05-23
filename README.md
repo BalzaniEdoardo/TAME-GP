@@ -1,5 +1,5 @@
-# P-GPCCA
-Extended Poisson-Gaussian CCA with GP-priors for the latent factors.
+# TAME-GP
+The Taske Aligned Manifold Estimation (TAME-GP), is an extended Poisson-Gaussian CCA with GP-priors for the latent factors.
 
 The code implements a targeted dimensionality reduction of neural spiking data fitting a latent variable probabilistic model.<br>
 The observed variables are spike counts from m different simoultaneusly recorded neural populations <b>x</b><sub>1</sub>,..,<b>x</b><sub>m</sub>, and some task relevant variables <b>s</b>.<br>
