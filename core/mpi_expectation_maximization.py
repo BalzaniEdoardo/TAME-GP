@@ -113,7 +113,6 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
         with open(iter_save, 'a') as fh:
             fh.write('Gauss M-Step tot time: %f sec\n'%(t1-t0))
             fh.close()
-        #nLL = -full_GaussLL(data)
 
         # learn Poisson obs param
         t0 = perf_counter()
@@ -160,10 +159,10 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                     data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
                     data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
                     data.xPar[k]['d'] = res.x[N * (K0 + K1):]
-                    #nLL += res.fun
+
                 else:
                     pass
-                    #nLL += func(parStack)
+
 
             elif method == 'sparse-Newton':
                 C = data.xPar[k]['W0']
@@ -185,7 +184,7 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
                 data.xPar[k]['W0'] = par_optim[:N * K0].reshape(N, K0)
                 data.xPar[k]['W1'] = par_optim[N * K0:N * (K0 + K1)].reshape(N, K1)
                 data.xPar[k]['d'] = par_optim[N * (K0 + K1):]
-                #nLL += feval / len(data.trialDur.keys())
+
 
         t1 = perf_counter()
         with open(iter_save, 'a') as fh:
@@ -204,10 +203,9 @@ def mpi_em(data,trial_dict, maxIter=10, tol=10**-3, method='sparse-Newton', tolP
             res = minimize(func, lam0, jac=gr_func, method='L-BFGS-B', tol=10 ** -12)
             if res.success or res.fun < func(lam0):
                 data.priorPar[k]['tau'] = np.exp(res.x / 2) * 1000 / data.binSize
-                nLL += res.fun
                 print('nLL prior before/after optim:', f0, res.fun)
             else:
-                nLL += func(lam0)
+                pass
 
         t1 = perf_counter()
         with open(iter_save, 'a') as fh:
