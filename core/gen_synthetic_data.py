@@ -6,7 +6,7 @@ from data_processing_tools import emptyStruct
 
 class dataGen(object):
 
-    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, meanZ0Levels=[0], infer=True, setTruePar=True,add_trend=False):
+    def __init__(self, trNum, T=50, D=4, K0=2, K2=5, K3=3, N=7, N1=6, meanZ0Levels=[0], fixZ0=False, infer=True, setTruePar=True,add_trend=False):
         super(dataGen,self).__init__()
         np.random.seed(90)
         ## Errors in gradient approximation have an average positive bias for each time point (due to the
@@ -65,8 +65,8 @@ class dataGen(object):
             if add_trend:
                 yy = np.linspace(-1,1,T)*meanZ0Levels[blkId]
             self.blokTr[tr] = blkId
-
-            z = np.random.multivariate_normal(mean=np.ones(K0 * T)*meanZ0Levels[blkId], cov=K_big0, size=1).reshape(K0, T).T
+            if (not fixZ0) or tr == 0:
+                z = np.random.multivariate_normal(mean=np.ones(K0 * T)*meanZ0Levels[blkId], cov=K_big0, size=1).reshape(K0, T).T
             if add_trend:
                 z = z + yy.reshape(z.shape[0],1)
             z2 = np.random.multivariate_normal(mean=np.zeros(K2 * T), cov=K_big2, size=1).reshape(K2,T).T
@@ -135,7 +135,7 @@ class dataGen(object):
 
 class dataGen_poissonOnly(object):
 
-    def __init__(self, trNum, T=50, K0=2, K2=5, K3=3, N=7, N1=6, meanZ0Levels=[0], infer=True, setTruePar=True,add_trend=False):
+    def __init__(self, trNum, T=50, K0=2, K2=5, K3=3, N=7, N1=6, meanZ0Levels=[0], fixZ0=False, infer=True, setTruePar=True,add_trend=False):
         super(dataGen_poissonOnly,self).__init__()
         np.random.seed(90)
         D = 0
@@ -166,8 +166,8 @@ class dataGen_poissonOnly(object):
         W13 = 1 * np.random.normal(size=(N1, K3)) / fract
 
 
-        d2 = 1 * np.random.uniform(-1, 0.2, size=(N))
-        d3 = 1 * np.random.uniform(-1, 0.2, size=(N1))
+        d2 = 1 * np.random.uniform(-1.9, -0.6, size=(N))
+        d3 = 1 * np.random.uniform(-1.9, -0.6, size=(N1))
 
 
         # create a fake data
@@ -190,8 +190,8 @@ class dataGen_poissonOnly(object):
             if add_trend:
                 yy = np.linspace(-1,1,T)*meanZ0Levels[blkId]
             self.blokTr[tr] = blkId
-
-            z = np.random.multivariate_normal(mean=np.ones(K0 * T)*meanZ0Levels[blkId], cov=K_big0, size=1).reshape(K0, T).T
+            if (not fixZ0) or tr == 0:
+                z = np.random.multivariate_normal(mean=np.ones(K0 * T)*meanZ0Levels[blkId], cov=K_big0, size=1).reshape(K0, T).T
             if add_trend:
                 z = z + yy.reshape(z.shape[0],1)
             z2 = np.random.multivariate_normal(mean=np.zeros(K2 * T), cov=K_big2, size=1).reshape(K2,T).T
@@ -251,15 +251,20 @@ if __name__ == '__main__':
     from data_processing_tools import retrive_t_blocks_fom_cov
     import matplotlib.pylab as plt
     from time import perf_counter
-    data = dataGen_poissonOnly(150,T=50)
-    i_latent = 2
-    tr = 0
-    mean_t,cov_t = retrive_t_blocks_fom_cov(data.cca_input,tr, i_latent,data.meanPost,data.covPost)
-    K0 = (i_latent!=0)*data.cca_input.zdims[0]
-    i0 = np.sum(data.cca_input.zdims[:i_latent])
-    K = data.cca_input.zdims[i_latent]
-    plt.figure(figsize=[12,3.5])
-    for tt in range(K):
-        plt.subplot(1,K,tt+1)
-        p=plt.plot(mean_t[:, K0+tt],ls='--')
-        plt.plot(data.ground_truth_latent[tr][:, i0+tt],color=p[0].get_color())
+    data = dataGen_poissonOnly(50,T=100, K0=2, K2=5, K3=3,N=30,N1=40,fixZ0=False,infer=False)
+    # i_latent = 2
+    # tr = 0
+    # mean_t,cov_t = retrive_t_blocks_fom_cov(data.cca_input,tr, i_latent,data.meanPost,data.covPost)
+    # K0 = (i_latent!=0)*data.cca_input.zdims[0]
+    # i0 = np.sum(data.cca_input.zdims[:i_latent])
+    # K = data.cca_input.zdims[i_latent]
+    # plt.figure(figsize=[12,3.5])
+    # for tt in range(K):
+    #     plt.subplot(1,K,tt+1)
+    #     p=plt.plot(mean_t[:, K0+tt],ls='--')
+    #     plt.plot(data.ground_truth_latent[tr][:, i0+tt],color=p[0].get_color())
+    # import dill
+    # with open('/Users/edoardo/Work/Code/SNP_GPFA-main/sim_tame_fixed_shared_latent.dill', 'w') as fh:
+    #     fh.write(dill.dumps(data))
+    # fh.close()
+    np.savez('/Users/edoardo/Work/Code/SNP_GPFA-main/sim_tame_variable_shared_latent.npz',data=data.cca_input)
