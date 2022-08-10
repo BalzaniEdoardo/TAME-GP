@@ -203,8 +203,8 @@ class P_GPCCA(object):
 
 
             else:
-                W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
-                W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0])))
+                W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc]))) #0.01 orig
+                W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0]))) #0.01 orig
             cc += 1
 
         # zdims are the dimensinons of the latent variables
