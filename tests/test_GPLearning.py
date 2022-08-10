@@ -68,6 +68,7 @@ class TestGPLearning(unittest.TestCase):
 
     def test_GPOoptimCorr(self):
         cor = pearsonr(self.res.x,self.target)[0]
+        print('result reg: ', self.res.x,'- truth: ',self.target)
         self.assertGreaterEqual(cor,0.99)
 
 if __name__ == "__main__":

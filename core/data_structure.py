@@ -247,7 +247,7 @@ class P_GPCCA(object):
 
         else:
             stimPar = {
-                    'W0': 0.01 * np.random.normal(size=(stimDim, zdims[0])),
+                    'W0': 0.0 * np.random.normal(size=(stimDim, zdims[0])),#original 0.1
                     'd': stimMean,
                     'PsiInv': np.linalg.pinv(stimCov + np.eye(stimDim) * 0.0001)
                     }
@@ -350,6 +350,8 @@ class P_GPCCA(object):
 
 
             else:
+                # W1_list.append(0.0 * np.random.normal(size=(xDims[-1], zdims[cc])))
+                # W0_list.append(0.0 * np.random.normal(size=(xDims[-1], zdims[0])))
                 W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
                 W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0])))
             cc += 1
