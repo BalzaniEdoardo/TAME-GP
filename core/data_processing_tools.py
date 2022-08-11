@@ -257,7 +257,7 @@ def parse_fullCov(data, meanPost, covPost, T):
 
     cnt_dim = 0
     for K in data.zdims:
-        i0 = np.sum(data.zdims[:cnt_dim])*T
+        i0 = int(np.sum(data.zdims[:cnt_dim])*T)
 
         mean_k = meanPost[i0:i0 + K * T]
         cov_k = covPost[i0: i0 + K * T, i0: i0 + K * T]
@@ -296,8 +296,7 @@ def parse_fullCov_latDim(data, meanPost, covPost, T):
 
     for K in data.zdims:
         idx = np.arange(0, K * T, K)
-        i0 = np.sum(data.zdims[:cnt_dim])*T
-
+        i0 = int(np.sum(data.zdims[:cnt_dim])*T)
         mean_k = meanPost[i0:i0 + K * T] # dim KT
         cov_k = covPost[i0: i0 + K * T, i0: i0 + K * T] # dim KT x KT
 
