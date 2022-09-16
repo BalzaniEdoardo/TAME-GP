@@ -345,12 +345,14 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
         if savepath and (rank == 0):
             with open(savepath, 'a') as fh:
                 string = 'trial %d start minimize\n '%trNum
+                string += 'zbar: %s\n'%zbar[:10]
                 fh.write(string)
                 fh.close()
             disp=True
         else:
             disp=False
-        res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp':False})
+
+        res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp': False})
     except Exception as e:
         if savepath and (rank == 0):
             with open(savepath, 'a') as fh:
