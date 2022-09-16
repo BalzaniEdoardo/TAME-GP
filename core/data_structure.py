@@ -210,7 +210,7 @@ class P_GPCCA(object):
         # zdims are the dimensinons of the latent variables
         priorPar = []
         for kk in zdims:
-            priorPar.append({'tau': np.random.uniform(0.1,0.3)})
+            priorPar.append({'tau': np.random.uniform(0.1,0.3,size=kk)})
 
 
         if use_cca_for_stim:
