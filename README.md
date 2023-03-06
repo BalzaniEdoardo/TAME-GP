@@ -30,3 +30,9 @@ The resulting graphical model is depicted below,
 The code implements parameter learning and inference in the mdoel presented above. Parameters are learned with an approximate EM algorithm where the latent posterior distribution is approximated via the Laplace method.
 Inference is implemented as numerical optimization of the MAP for the latents. Latent covariacnce is approximated via the Laplace method.
 
+# References <a name="refs"></a>
+<a id="1">[1]</a> 
+<a href="https://arxiv.org/abs/2209.02816">
+Balzani, Edoardo , et al., 
+"A probabilistic framework for task-aligned intra- and inter-area neural manifold estimation.",
+Arxiv, 2022 <a>
