@@ -3,7 +3,7 @@ The Taske Aligned Manifold Estimation (TAME-GP), is an extended Poisson-Gaussian
 
 The code implements a targeted dimensionality reduction of neural spiking data fitting a latent variable probabilistic model.<br>
 The observed variables are spike counts from m different simoultaneusly recorded neural populations <b>x</b><sub>1</sub>,..,<b>x</b><sub>m</sub>, and some task relevant variables <b>s</b>.<br>
-We introduce a latent variable  <b>z</b><sub>0</sub> capturing correlation between task varaibles and spiking (as in a probabilistic CCA, fig A), and other 
+We introduce a latent variable  <b>z</b><sub>0</sub> capturing correlation between task varaibles and spiking (as in a probabilistic CCA), and other 
  <b>z</b><sub>j</sub>, j=1,..,m latents capturing whithin brain area correlations (as  in a factor analysis). <br>
  
  For each factor we include a GP prior with RBF kernels, <br>
@@ -19,8 +19,11 @@ Given the assumptions, the model factorizes according to,
 
 <img src="https://latex.codecogs.com/svg.latex?\Large&space;p(\mathbf{x},\mathbf{s},\mathbf{z})=\prod_{j\ge0}p(\mathbf{z}_j)p(\mathbf{s}|\mathbf{z}_0)\prod_{j>0,i}p(\mathbf{x}_j^i|\mathbf{z}_j,\mathbf{z}_0)" title="\Large xx" />
 
-The resulting graphical model is depicted in fig B.
-![pCCA_schemes](https://user-images.githubusercontent.com/28624715/148568234-66c0f179-c839-4d56-ad0e-826940bb324d.png)
+The resulting graphical model is depicted below,
+
+
+
+![tame-gp](https://user-images.githubusercontent.com/28624715/223232945-7a6bfbd5-0cd6-4c4a-9155-3ee5d27efef7.png)
 
 
 # Implementation
