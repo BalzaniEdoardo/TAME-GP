@@ -213,8 +213,8 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
         print('current LL: ',LL_list[-1])
         if ii == 0:
             continue
-        if np.abs(LL_list[-2]-LL_list[-1])/np.abs(LL_list[0]-LL_list[1]) < tol:
-            break
+        # if np.abs(LL_list[-2]-LL_list[-1])/np.abs(LL_list[0]-LL_list[1]) < tol:
+        #     break
     data.ll_iter.append(LL_list)
     print('Final Posterior Inference....')
     multiTrialInference(data, plot_trial=True)

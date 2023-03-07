@@ -9,7 +9,7 @@ from sklearn.cross_decomposition import CCA
 
 class P_GPCCA(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001,
-                 transposeY = False, storeAllCovariates=False):
+                 transposeY = False, storeAllCovariates=False, filter_out_nan=True):
         """
         :param preProc: structure with attributes:
             * numTrials: int, number of trials
@@ -64,24 +64,28 @@ class P_GPCCA(object):
 
                 for tr in range(self.preproc.numTrials):
                     cov[var][tr] = self.preproc.covariates[var][tr]
-                    if var in var_list:
-                        # set nan filter only for the one used in the fit
-                        non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
+                    if filter_out_nan:
+                        if var in var_list and (not '_fly' in var):
+                            # set nan filter only for the one used in the fit
+                            non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
 
             # remove nan
             rm_trials = []
-            for tr in range(self.preproc.numTrials):
-                data[tr]['Y'] = data[tr]['Y'][non_nan_trial[tr],:]
+            if filter_out_nan:
+                for tr in range(self.preproc.numTrials):
+                    data[tr]['Y'] = data[tr]['Y'][non_nan_trial[tr],:]
 
-                self.trialDur[tr] = np.sum(non_nan_trial[tr])
-                if self.trialDur[tr] < 5:
-                    rm_trials.append(tr)
-                for var in vv_list:
-                    try:
-                        cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
-                    except:
-                        if var in var_list:
-                            rm_trials += [tr]
+                    self.trialDur[tr] = np.sum(non_nan_trial[tr])
+                    if self.trialDur[tr] < 5:
+                        rm_trials.append(tr)
+                    for var in vv_list:
+                        if '_fly' in var:
+                            continue
+                        try:
+                            cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
+                        except:
+                            if var in var_list:
+                                rm_trials += [tr]
 
             for tr in np.unique(rm_trials):
                 data.pop(tr)
@@ -403,7 +407,7 @@ class P_GPCCA(object):
             K0 += np.prod(parDict['tau'].shape)
         return K0
 
-    def get_observations(self, trNum):
+    def get_observations(self, trNum, remove_nan=True):
         """
         This function extracts the observed variables for a specific trial
         :param trNum: int, trial number
@@ -422,7 +426,10 @@ class P_GPCCA(object):
             stim[:, cc] = taskVars[var][trNum]
             cc += 1
 
-        keep_idx = ~np.isnan(stim.sum(axis=1))
+        if remove_nan:
+            keep_idx = ~np.isnan(stim.sum(axis=1))
+        else:
+            keep_idx = np.ones(stim.shape[0], dtype=bool)
         stim = stim[keep_idx]
 
         # create the list

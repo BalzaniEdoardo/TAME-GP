@@ -154,7 +154,7 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNois
     #K0 = priorPar[0]['tau'].sh
     tau0 = priorPar[0]['tau']
     K0 = tau0.shape[0]
-    if not stim is None:
+    if (not stim is None) and useGauss:
         T, stimDim = stim.shape
     else:
         T,_ = xList[0].shape
@@ -167,7 +167,10 @@ def PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, epsNois
     if stim.shape[1] == 0:
         logLike = GPLogLike(z0, K0_big_inv)
     else:
-        logLike = useGauss * gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
+        if useGauss:
+            logLike = gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv']) + GPLogLike(z0, K0_big_inv)
+        else:
+            logLike = GPLogLike(z0, K0_big_inv)
 
     i0 = K0*T
     for k in range(len(xList)):
@@ -188,7 +191,7 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     tau0 = priorPar[0]['tau']
     K0 = tau0.shape[0]
 
-    if stim.shape[1]==0:
+    if (stim.shape[1]==0) and useGauss:
         T, stimDim = stim.shape
     else:
         T, _ = xList[0].shape
@@ -203,7 +206,9 @@ def grad_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
 
     grad_z0 = grad_z0.reshape(K0,T).T.flatten()
     if stim.shape[1] != 0:
-        grad_z0 = grad_z0 + useGauss*grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+        if useGauss:
+            grad_z0 = grad_z0 + grad_gaussObsLogLike(stim, z0, stimPar['W0'], stimPar['d'], stimPar['PsiInv'])
+
     grad_logLike[:T*K0] = grad_z0
 
     i0 = K0*T
@@ -240,7 +245,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     tau0 = priorPar[0]['tau']
     K0 = tau0.shape[0]
 
-    if stim.shape[1] != 0:
+    if (stim.shape[1] != 0) and useGauss:
         T, stimDim = stim.shape
     else:
         T, _ = xList[0].shape
@@ -255,8 +260,12 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     if stim.shape[1] == 0:
         hess_logLike[:T * K0, :T * K0] = usePrior * hess_z0[idx_rot, :][:, idx_rot]
     else:
-        hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + useGauss*hess_gaussObsLogLike(stim,z0,stimPar['W0'],
+        if useGauss:
+            hess_logLike[:T*K0,:T*K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot] + hess_gaussObsLogLike(stim,z0,stimPar['W0'],
                                                                                      stimPar['d'],stimPar['PsiInv'])
+        else:
+            hess_logLike[:T * K0, :T * K0] = usePrior*hess_z0[idx_rot,:][:,idx_rot]
+
     i0 = K0*T
     for k in range(len(xList)):
         N, K = xPar[k]['W1'].shape
@@ -277,7 +286,7 @@ def hess_PpCCA_logLike(zstack, stim, xList, priorPar, stimPar, xPar, binSize, ep
     return hess_logLike
 
 def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,remove_neu_dict=None,
-               savepath=None,rank=None):
+               savepath=None,rank=None, remove_nan=True):
     """
     Laplace inference for an individual trial
     :param data: P_GPCCA
@@ -287,7 +296,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     :return: 
     """
     # retrive outputs
-    stim, xList = data.get_observations(trNum)
+    stim, xList = data.get_observations(trNum, remove_nan=remove_nan)
     if savepath and (rank == 0):
         with open(savepath,'a') as fh:
             string = 'trial %d obs extracted\n'%trNum
@@ -353,7 +362,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
             disp=False
 
         res = minimize(func, zbar, jac=grad_fun, method='L-BFGS-B',options={'disp': False})
-    except Exception as e:
+    except IOError:#Exception as e:
         if savepath and (rank == 0):
             with open(savepath, 'a') as fh:
                 string = 'trial %d exception: '%trNum + e + '\n'
@@ -384,7 +393,7 @@ def inferTrial(data, trNum, zbar=None, useGauss=1, returnLogDetPrecision=False,r
     return zbar, laplAppCov, res.fun
 
 def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_post=False, useGauss=1,
-                        returnLogDetPrecision=False, remove_neu_dict=None,savepath=None, rank=None):
+                        returnLogDetPrecision=False, remove_neu_dict=None,savepath=None, rank=None, remove_nan=True):
     """
     Laplace inference for all trials and store the result in the data structure.
     :param data: CCA_input_data
@@ -435,10 +444,11 @@ def multiTrialInference(data, plot_trial=False, trial_list=None, return_list_pos
         # set all the attributes related to trial as dictionaries
         T = data.trialDur[tr]
         if returnLogDetPrecision:
-            logDetPrecision.append(inferTrial(data, tr, zbar=zbar, useGauss=useGauss, returnLogDetPrecision=returnLogDetPrecision,remove_neu_dict=remove_neu_dict))
+            logDetPrecision.append(inferTrial(data, tr, zbar=zbar, useGauss=useGauss, returnLogDetPrecision=returnLogDetPrecision,
+                                              remove_neu_dict=remove_neu_dict,remove_nan=remove_nan))
         else:
             meanPost, covPost, val = inferTrial(data, tr, zbar=zbar, useGauss=useGauss,remove_neu_dict=remove_neu_dict,
-                                           savepath=savepath,rank=rank)
+                                           savepath=savepath,rank=rank,remove_nan=remove_nan)
             nll += val
             if savepath and (rank == 0):
                 with open(savepath, 'a') as fh:
