@@ -9,7 +9,7 @@ from sklearn.cross_decomposition import CCA
 
 class P_GPCCA(object):
     def __init__(self, preProc, var_list, area_list, unit_area, filter_unit, binSize=50, epsNoise=0.001,
-                 transposeY = False, storeAllCovariates=False):
+                 transposeY = False, storeAllCovariates=False, filter_out_nan=True):
         """
         :param preProc: structure with attributes:
             * numTrials: int, number of trials
@@ -64,24 +64,28 @@ class P_GPCCA(object):
 
                 for tr in range(self.preproc.numTrials):
                     cov[var][tr] = self.preproc.covariates[var][tr]
-                    if var in var_list:
-                        # set nan filter only for the one used in the fit
-                        non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
+                    if filter_out_nan:
+                        if var in var_list and (not '_fly' in var):
+                            # set nan filter only for the one used in the fit
+                            non_nan_trial[tr] = non_nan_trial[tr] * (~np.isnan(self.preproc.covariates[var][tr]))
 
             # remove nan
             rm_trials = []
-            for tr in range(self.preproc.numTrials):
-                data[tr]['Y'] = data[tr]['Y'][non_nan_trial[tr],:]
+            if filter_out_nan:
+                for tr in range(self.preproc.numTrials):
+                    data[tr]['Y'] = data[tr]['Y'][non_nan_trial[tr],:]
 
-                self.trialDur[tr] = np.sum(non_nan_trial[tr])
-                if self.trialDur[tr] < 5:
-                    rm_trials.append(tr)
-                for var in vv_list:
-                    try:
-                        cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
-                    except:
-                        if var in var_list:
-                            rm_trials += [tr]
+                    self.trialDur[tr] = np.sum(non_nan_trial[tr])
+                    if self.trialDur[tr] < 5:
+                        rm_trials.append(tr)
+                    for var in vv_list:
+                        if '_fly' in var:
+                            continue
+                        try:
+                            cov[var][tr] = cov[var][tr][non_nan_trial[tr]]
+                        except:
+                            if var in var_list:
+                                rm_trials += [tr]
 
             for tr in np.unique(rm_trials):
                 data.pop(tr)
@@ -203,14 +207,14 @@ class P_GPCCA(object):
 
 
             else:
-                W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
-                W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0])))
+                W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc]))) #0.01 orig
+                W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0]))) #0.01 orig
             cc += 1
 
         # zdims are the dimensinons of the latent variables
         priorPar = []
         for kk in zdims:
-            priorPar.append({'tau': np.random.rand(kk)*0.5})
+            priorPar.append({'tau': np.random.uniform(0.1,0.3,size=kk)})
 
 
         if use_cca_for_stim:
@@ -247,7 +251,7 @@ class P_GPCCA(object):
 
         else:
             stimPar = {
-                    'W0': 0.01 * np.random.normal(size=(stimDim, zdims[0])),
+                    'W0': 0.0 * np.random.normal(size=(stimDim, zdims[0])),#original 0.1
                     'd': stimMean,
                     'PsiInv': np.linalg.pinv(stimCov + np.eye(stimDim) * 0.0001)
                     }
@@ -350,6 +354,8 @@ class P_GPCCA(object):
 
 
             else:
+                # W1_list.append(0.0 * np.random.normal(size=(xDims[-1], zdims[cc])))
+                # W0_list.append(0.0 * np.random.normal(size=(xDims[-1], zdims[0])))
                 W1_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[cc])))
                 W0_list.append(0.01 * np.random.normal(size=(xDims[-1], zdims[0])))
             cc += 1
@@ -357,7 +363,7 @@ class P_GPCCA(object):
         # zdims are the dimensinons of the latent variables
         priorPar = []
         for kk in zdims:
-            priorPar.append({'tau': np.random.rand(kk) * 0.5})
+            priorPar.append({'tau': np.random.uniform(0.1,0.3, size=kk) })
 
         stimPar = {
             'W0': None,
@@ -401,7 +407,7 @@ class P_GPCCA(object):
             K0 += np.prod(parDict['tau'].shape)
         return K0
 
-    def get_observations(self, trNum):
+    def get_observations(self, trNum, remove_nan=True):
         """
         This function extracts the observed variables for a specific trial
         :param trNum: int, trial number
@@ -420,7 +426,10 @@ class P_GPCCA(object):
             stim[:, cc] = taskVars[var][trNum]
             cc += 1
 
-        keep_idx = ~np.isnan(stim.sum(axis=1))
+        if remove_nan:
+            keep_idx = ~np.isnan(stim.sum(axis=1))
+        else:
+            keep_idx = np.ones(stim.shape[0], dtype=bool)
         stim = stim[keep_idx]
 
         # create the list
