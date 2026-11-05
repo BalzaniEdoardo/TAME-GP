@@ -129,8 +129,14 @@ def infer_trial(
 
     coefficients, state, _ = solver.run(init_coefficients, model, trial)
     stats = solver._get_optim_info(state)
-    mean = model.latents(coefficients, trial)
+    return _assemble_posterior(
+        model, trial, coefficients, stats.num_steps, stats.converged, covariance
+    )
 
+
+@eqx.filter_jit
+def _assemble_posterior(model, trial, coefficients, num_steps, converged, covariance):
+    """Everything after the MAP, compiled as one function (``covariance`` is static)."""
     cov_t = cov_k = None
     if covariance != "none":
         cov_t, cov_k = laplace_covariance_blocks(
@@ -138,12 +144,12 @@ def infer_trial(
         )
     return LaplacePosterior(
         coefficients=coefficients,
-        mean=mean,
+        mean=model.latents(coefficients, trial),
         cov_t=cov_t,
         cov_k=cov_k,
         objective=negative_log_joint(coefficients, model, trial),
-        num_steps=stats.num_steps,
-        converged=stats.converged,
+        num_steps=num_steps,
+        converged=converged,
     )
 
 

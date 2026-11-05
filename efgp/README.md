@@ -14,10 +14,14 @@ Poisson-Gaussian probabilistic CCA with GP priors; only the inference changes.
 
 ## How inference works
 
-1. **Prior in weight space.** `EFGPPrior` takes the frequency grid and weights from
+1. **Prior in weight space.** `EFGPPrior` holds the frequency grid and weights of
    `nemos.basis.FourierGP`. Each latent is `z_k(t) = Phi_k(t) beta_k` with
    `beta_k ~ N(0, I)`, and `Phi_k Phi_k^T` approximates the SE kernel to `tol`.
-   The dense basis matrix is never built.
+   The grid is computed by `efgp.prior.efgp_grid`, a numpy copy of nemos'
+   formula. The nemos version compiles small JAX kernels for every new
+   lengthscale, about 0.2 s per EM iteration, while the numpy copy takes about
+   0.1 ms. A test checks that both give the same grid. The dense basis matrix is
+   never built.
 2. **Operators.** `Phi` (type-2 NUFFT) and `Phi^T` (type-1 NUFFT, from jax-finufft)
    are lineax operators. The Newton matrix is `I + Phi^T H Phi`, where `H` holds one
    `K x K` block per time point. All of them compose with `@` and `+`.

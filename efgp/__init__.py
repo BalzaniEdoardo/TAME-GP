@@ -1,7 +1,8 @@
 """EFGP Laplace inference for the Poisson-Gaussian GP-CCA latent model.
 
 Each latent dimension is a GP with a squared-exponential kernel, approximated in
-weight space with the equispaced Fourier grid of :class:`nemos.basis.FourierGP`.
+weight space with the equispaced Fourier grid of :class:`nemos.basis.FourierGP`
+(computed in numpy, see :func:`efgp.prior.efgp_grid`).
 Products with the feature matrix are NUFFTs (jax-finufft), wrapped as lineax
 operators, and the MAP is found with a matrix-free Newton-CG solver built on nemos.
 

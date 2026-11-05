@@ -11,8 +11,12 @@ so that ``Cov[z_k(t), z_k(s)]`` approximates ``variance * exp(-(t-s)^2 / 2 l_k^2
 to the absolute tolerance ``tol`` on ``|t - s| <= duration``.
 
 The frequency spacing ``h_k``, the number of frequencies ``m_k`` and the weights
-come from :class:`nemos.basis.FourierGP` (Barnett, Greengard & Rachh, 2024). Only
-these numbers are kept; the dense basis matrix is never built.
+follow :class:`nemos.basis.FourierGP` (Barnett, Greengard & Rachh, 2024), computed
+by :func:`efgp_grid`, a numpy copy of nemos' ``_get_nodes_weights``. The nemos
+version runs ``jax.numpy`` on arrays whose length depends on the lengthscale, so
+each new lengthscale compiles small kernels (about 0.2 s for 10 latents, at every
+EM iteration); the numpy copy takes about 0.1 ms. The tests check that both give
+the same grid. Only these numbers are kept; the dense basis matrix is never built.
 
 Coefficient layout
 ------------------
@@ -27,11 +31,45 @@ from __future__ import annotations
 
 from typing import Sequence
 
+import math
+
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float
-from nemos.basis import FourierGP
+
+
+def efgp_grid(lengthscale: float, variance: float, tol: float, duration: float):
+    """Frequency spacing and weights of the EFGP approximation of one SE kernel.
+
+    Same formula as ``nemos.basis._fourier_basis._get_nodes_weights`` (used by
+    :class:`nemos.basis.FourierGP`), in numpy.
+
+    Returns
+    -------
+    h :
+        Frequency spacing.
+    cos_weights :
+        Weights of ``cos(2 pi j h t)``, ``j = 0..m``, shape ``(m + 1,)``.
+    sin_weights :
+        Weights of ``sin(2 pi j h t)``, ``j = 1..m``, shape ``(m,)``.
+    """
+    if lengthscale <= 0 or variance <= 0 or tol <= 0:
+        raise ValueError(
+            f"lengthscale, variance and tol must be positive, got {lengthscale}, {variance}, {tol}."
+        )
+    eps = tol / variance
+    h = 1.0 / (duration + lengthscale * math.sqrt(2.0 * math.log(12.0 / eps)))
+    m = math.ceil(math.sqrt(math.log(16.0 / eps) / 2.0) / math.pi / lengthscale / h)
+    xis = np.arange(m + 1) * h
+    density = variance * math.sqrt(2.0 * math.pi) * lengthscale * np.exp(
+        -2.0 * (math.pi * lengthscale * xis) ** 2
+    )
+    w = np.sqrt(density * h)
+    # Fold the +j and -j modes into one cosine and one sine: sqrt(2) for j > 0.
+    cos_weights = w * np.r_[1.0, np.full(m, math.sqrt(2.0))]
+    sin_weights = math.sqrt(2.0) * w[1:]
+    return h, cos_weights, sin_weights
 
 
 class EFGPPrior(eqx.Module):
@@ -79,7 +117,7 @@ class EFGPPrior(eqx.Module):
         tol: float = 1e-6,
         lengthscale_bounds: tuple[float, float] | None = None,
     ) -> "EFGPPrior":
-        """Build the frequency grid of every latent with :class:`nemos.basis.FourierGP`.
+        """Build the frequency grid of every latent (the grid of :class:`nemos.basis.FourierGP`).
 
         Parameters
         ----------
@@ -106,9 +144,9 @@ class EFGPPrior(eqx.Module):
 
         Notes
         -----
-        This runs eagerly, outside ``jit``: the number of frequencies is a Python
+        This runs in numpy, outside ``jit``: the number of frequencies is a Python
         integer that depends on the lengthscale. Rebuild the prior whenever the
-        lengthscales change.
+        lengthscales change; it takes well under a millisecond.
         """
         lengthscales = np.asarray(lengthscales, dtype=float).reshape(-1)
         if duration <= 0:
@@ -124,27 +162,15 @@ class EFGPPrior(eqx.Module):
 
         spacings, cos_w, sin_w = [], [], []
         for lengthscale in lengthscales:
-            basis = FourierGP(
-                lengthscale=float(lengthscale),
-                bounds=(t0, t0 + duration),
-                eps=tol,
-                variance=variance,
-            )
-            m = basis.n_frequencies
-            weights = np.asarray(basis.weights)  # [cos 0..m, sin 1..m]
-            spacings.append(basis.frequency_spacing)
-            cos_w.append(weights[: m + 1])
-            sin_w.append(weights[m + 1 :])
+            h, wc, ws = efgp_grid(float(lengthscale), variance, tol, duration)
+            spacings.append(h)
+            cos_w.append(wc)
+            sin_w.append(ws)
 
-        n_max = max(len(w) for w in cos_w) - 1  # M
+        n_max = max(len(w) for w in sin_w)  # M
         if lengthscale_bounds is not None:
-            worst_case = FourierGP(
-                lengthscale=float(lengthscale_bounds[0]),
-                bounds=(t0, t0 + duration),
-                eps=tol,
-                variance=variance,
-            )
-            n_max = max(n_max, worst_case.n_frequencies)
+            worst_case = efgp_grid(float(lengthscale_bounds[0]), variance, tol, duration)
+            n_max = max(n_max, len(worst_case[2]))
         cos_weights = np.zeros((len(lengthscales), n_max + 1))
         sin_weights = np.zeros((len(lengthscales), n_max))
         for k, (wc, ws) in enumerate(zip(cos_w, sin_w)):

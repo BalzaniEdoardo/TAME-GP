@@ -23,11 +23,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .inference import LaplacePosterior, infer_trial, newton_cg_solver
-from .model import LatentModel, Trial
+from .inference import LaplacePosterior, infer_trials, newton_cg_solver
+from .model import LatentModel, Trial, stack_trials
 from .observations import GaussianObservations, PoissonObservations
 from .prior import EFGPPrior
 
@@ -143,19 +144,28 @@ class EFGPEStep:
         if self._solver is None:
             self._solver = newton_cg_solver(model, **self.solver_kwargs)
 
+        # Trials of the same length are solved together in one vmapped call. The
+        # groups are the same at every EM iteration, so each compiles once.
+        by_length = {}
+        for tr in data.trialDur:
+            by_length.setdefault(data.trialDur[tr], []).append(tr)
+
         total = 0.0
-        for i, tr in enumerate(data.trialDur):
+        zeros = model.init_coefficients()
+        for n_time, ids in by_length.items():
             if plot_trial:
-                print(f"infer trial: {i + 1}/{len(data.trialDur)}")
-            posterior = infer_trial(
+                print(f"infer {len(ids)} trials of {n_time} time points")
+            posteriors = infer_trials(
                 model,
-                trial_from_pgpcca(data, tr),
+                stack_trials([trial_from_pgpcca(data, tr) for tr in ids]),
                 solver=self._solver,
-                init_coefficients=self._coefficients.get(tr),
+                init_coefficients=jnp.stack([self._coefficients.get(tr, zeros) for tr in ids]),
             )
-            store_posterior(data, tr, model, posterior)
-            self._coefficients[tr] = posterior.coefficients
-            total += float(posterior.objective)
+            for i, tr in enumerate(ids):
+                posterior = jax.tree.map(lambda x: x[i], posteriors)
+                store_posterior(data, tr, model, posterior)
+                self._coefficients[tr] = posterior.coefficients
+                total += float(posterior.objective)
         return total
 
 
