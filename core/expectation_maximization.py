@@ -51,7 +51,8 @@ def computeLL(data):
 
 def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                              method='sparse-Newton', tolPoissonOpt=10**-12,
-                             boundsW0=None, boundsW1=None, boundsD=None):
+                             boundsW0=None, boundsW1=None, boundsD=None, e_step=None,
+                             tau_bounds=None, gp_m_step=None, warm_start_poisson=True):
     """
 
     :param data: P_GPCCA structure
@@ -79,8 +80,27 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
     :param boundsD:
         None: set default to [-10,5] for Poisson variables
         [lb,ub] pair of lower and upper bounds
+    :param e_step: callable or None
+        E-step called as e_step(data, plot_trial=True). It must fill data.posterior_inf.
+        None: the Laplace inference of core/inference.py (multiTrialInference).
+        Use efgp.legacy.EFGPEStep(tau_bounds) for the EFGP inference.
+    :param tau_bounds: (lower, upper) or None
+        Bounds on the GP time constants, in seconds, for the L-BFGS-B GP M-step.
+        Required with the EFGP E-step, which sizes its Fourier grid for this range.
+        None: unbounded, as before.
+    :param gp_m_step: callable or None
+        GP time-constant M-step called as gp_m_step(data). It must update
+        data.priorPar and return its negative log-likelihood term.
+        None: the L-BFGS-B M-step below. Use efgp.legacy.GPTimescaleMStep(tau_bounds)
+        for the vectorised JAX version of the same objective.
+    :param warm_start_poisson: bool
+        True: start the L-BFGS-B Poisson M-step from the current parameters.
+        False: start it from zeros, as in earlier versions. The problem is convex,
+        so both reach the same optimum; the warm start needs fewer iterations.
     :return:
     """
+    if e_step is None:
+        e_step = multiTrialInference
     # save the intial parameters
     data.init_priorPar = deepcopy(data.priorPar)
     data.init_xPar = deepcopy(data.xPar)
@@ -101,7 +121,7 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
         print('EM iteration: %d/%d'%(ii+1,maxIter))
         # infer latent
         print('- E-step')
-        multiTrialInference(data,plot_trial=True)
+        e_step(data, plot_trial=True)
         if ii == 0:
             print('initial LL:', computeLL(data)[0],'\n')
         # learn gaussian params
@@ -146,7 +166,8 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                                                           data, k+1, block_trials=100, isGrad=True)
 
                 print('- Poisson M-step, observed population: %d/%d'%(k+1,len(data.zdims)-1))
-                res = minimize(func, np.zeros(parStack.shape), jac=gr_func, method='L-BFGS-B', bounds=bounds, tol=tolPoissonOpt)
+                start = parStack if warm_start_poisson else np.zeros(parStack.shape)
+                res = minimize(func, start, jac=gr_func, method='L-BFGS-B', bounds=bounds, tol=tolPoissonOpt)
                 if res.success or res.fun < func(parStack):
                     data.xPar[k]['W0'] = res.x[:N * K0].reshape(N, K0)
                     data.xPar[k]['W1'] = res.x[N * K0:N * (K0 + K1)].reshape(N, K1)
@@ -184,7 +205,13 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                 nLL += feval / len(data.trialDur.keys())
 
         # learn GP param
-        for k in range(len(data.zdims)):
+        if gp_m_step is not None:
+            print('- GP M-step (all latent factors)')
+            nLL += gp_m_step(data)
+            groups_for_lbfgs = []  # done above
+        else:
+            groups_for_lbfgs = range(len(data.zdims))
+        for k in groups_for_lbfgs:
             tau = data.priorPar[k]['tau']
             if use_badsGP:
                 f,g = gpOptim.bads_optim(data,k)
@@ -201,7 +228,11 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
                 gr_func = lambda lam0: -all_trial_GPLL(lam0, data, k, block_trials=1, isGrad=True)
                 f0 = func(lam0)
                 print('- GP M-step, latent factor: %d/%d'%(k+1,len(data.zdims)))
-                res = minimize(func, lam0, jac=gr_func, method='L-BFGS-B', tol=10 ** -12)
+                if tau_bounds is None:
+                    lam_bounds = None
+                else:
+                    lam_bounds = [tuple(2 * np.log(np.asarray(tau_bounds) * data.binSize / 1000))] * len(lam0)
+                res = minimize(func, lam0, jac=gr_func, method='L-BFGS-B', tol=10 ** -12, bounds=lam_bounds)
                 if res.success or res.fun < func(lam0):
                     data.priorPar[k]['tau'] = np.exp(res.x/2)*1000/data.binSize
                     nLL += res.fun
@@ -217,7 +248,7 @@ def expectation_maximization(data, maxIter=10, tol=10**-3, use_badsGP=False,
         #     break
     data.ll_iter.append(LL_list)
     print('Final Posterior Inference....')
-    multiTrialInference(data, plot_trial=True)
+    e_step(data, plot_trial=True)
     LL = computeLL(data)
     data.ll_iter.append([LL])
     return LL_list

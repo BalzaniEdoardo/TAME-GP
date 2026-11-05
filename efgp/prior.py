@@ -77,6 +77,7 @@ class EFGPPrior(eqx.Module):
         t0: float = 0.0,
         variance: float = 1.0,
         tol: float = 1e-6,
+        lengthscale_bounds: tuple[float, float] | None = None,
     ) -> "EFGPPrior":
         """Build the frequency grid of every latent with :class:`nemos.basis.FourierGP`.
 
@@ -94,6 +95,14 @@ class EFGPPrior(eqx.Module):
         tol :
             Absolute tolerance on the kernel approximation. Smaller values add
             frequencies; the count grows like ``sqrt(log(1 / tol))``.
+        lengthscale_bounds :
+            ``(lower, upper)``: the range the lengthscales may take, for example
+            while they are fitted with EM. The coefficient array is then sized for
+            the worst case, the lower bound, which needs the most frequencies, so
+            its shape (and the compiled solver) is the same for every lengthscale
+            in the range. Latents with longer lengthscales are padded with
+            zero-weight modes, which leaves their prior unchanged. Lengthscales
+            outside the range raise a ``ValueError``.
 
         Notes
         -----
@@ -104,6 +113,14 @@ class EFGPPrior(eqx.Module):
         lengthscales = np.asarray(lengthscales, dtype=float).reshape(-1)
         if duration <= 0:
             raise ValueError(f"``duration`` must be positive, got {duration}.")
+        if lengthscale_bounds is not None:
+            lower, upper = lengthscale_bounds
+            outside = (lengthscales < lower) | (lengthscales > upper)
+            if outside.any():
+                raise ValueError(
+                    f"Lengthscales {lengthscales[outside]} are outside "
+                    f"lengthscale_bounds={lengthscale_bounds}."
+                )
 
         spacings, cos_w, sin_w = [], [], []
         for lengthscale in lengthscales:
@@ -120,6 +137,14 @@ class EFGPPrior(eqx.Module):
             sin_w.append(weights[m + 1 :])
 
         n_max = max(len(w) for w in cos_w) - 1  # M
+        if lengthscale_bounds is not None:
+            worst_case = FourierGP(
+                lengthscale=float(lengthscale_bounds[0]),
+                bounds=(t0, t0 + duration),
+                eps=tol,
+                variance=variance,
+            )
+            n_max = max(n_max, worst_case.n_frequencies)
         cos_weights = np.zeros((len(lengthscales), n_max + 1))
         sin_weights = np.zeros((len(lengthscales), n_max))
         for k, (wc, ws) in enumerate(zip(cos_w, sin_w)):

@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python (tame_gp)
 #     language: python
-#     name: python3
+#     name: tame_gp
 # ---
 
 # %% [markdown]
@@ -25,7 +25,8 @@
 # The simulation is the one in `core/gen_synthetic_data.py`: a shared latent (2 dims)
 # drives 4 Gaussian task variables and two Poisson areas, plus private latents
 # per area (5 and 3 dims). Trials are 50 bins of 50 ms, short enough for the
-# original code. Both methods use the true parameters.
+# original code. The inference sections use the true parameters; the EM section
+# learns them from a random initialisation.
 #
 # Runs from the repository root or from `examples/`.
 
@@ -247,6 +248,132 @@ tight = minimize(f, z_old, jac=grad, method="L-BFGS-B",
                  options={"gtol": 1e-10, "ftol": 1e-15, "maxiter": 20000})
 print(f"|original MAP - tightly re-optimised|: {np.abs(tight.x - z_old).max():.1e}")
 print(f"|EFGP MAP     - tightly re-optimised|: {np.abs(tight.x - z_new).max():.1e}")
+
+# %% [markdown]
+# ## Learning the parameters with EM
+#
+# The M-steps in `core/` take the latents only from `data.posterior_inf`, which
+# `store_posterior` fills in the same format. So EM with EFGP is the original EM
+# loop with two parts swapped:
+#
+# ```python
+# tau_bounds = (0.05, 2.0)  # seconds
+# expectation_maximization(
+#     data, method="L-BFGS-B", tau_bounds=tau_bounds,
+#     e_step=EFGPEStep(tau_bounds),          # EFGP Laplace inference
+#     gp_m_step=GPTimescaleMStep(tau_bounds),  # JAX M-step for the time constants
+# )
+# ```
+#
+# * `EFGPEStep`: the EFGP prior is sized once for the shortest allowed time
+#   constant, so the coefficient shape never changes during the fit and the solver
+#   compiles only once.
+# * `GPTimescaleMStep`: the same objective as the original GP M-step, with all time
+#   constants fitted at once (one independent problem per latent), trials of equal
+#   length summed first, and the bounds enforced by a change of variables.
+# * The Poisson M-step now starts from the current parameters instead of zeros
+#   (`warm_start_poisson=True`, the default); it is convex, so the optimum is the
+#   same.
+#
+# The "original" fit below is the old pipeline unchanged: Laplace E-step of
+# `core/inference.py`, L-BFGS-B GP M-step, Poisson M-step from zeros. Both fits use
+# the same bounds.
+#
+# Both fits below start from the same random initialisation (`initializeParam`).
+# `method="L-BFGS-B"` is used for the Poisson M-step because the default
+# `"sparse-Newton"` needs the `csr` package.
+#
+# The printed "LL" of the EM loop is the expected complete-data log-likelihood under
+# each E-step's own posterior, so the two curves show that each fit improves; their
+# values are not comparable. The comparison is on what was learned: the GP time
+# constants against the truth, and the firing rates against the true rates.
+#
+# What to expect: both fits recover the firing rates equally well. Neither moves the
+# time constants far from their initial values in 10 iterations, and both stay
+# below the truth. This comes from the GP M-step of `core/learnGPParams.py`, which
+# both fits share, not from the E-step.
+
+# %%
+import contextlib
+import copy
+import io
+
+from expectation_maximization import expectation_maximization
+from efgp.legacy import EFGPEStep, GPTimescaleMStep
+
+n_iter = 10
+tau_bounds = (0.05, 2.0)
+em_data = dataGen(10, T=n_time, infer=False, setTruePar=False).cca_input
+fits = {}
+pipelines = {
+    "original": dict(e_step=None, gp_m_step=None, warm_start_poisson=False),
+    "EFGP": dict(e_step=EFGPEStep(tau_bounds), gp_m_step=GPTimescaleMStep(tau_bounds)),
+}
+for name, options in pipelines.items():
+    d = copy.deepcopy(em_data)
+    t0 = time.perf_counter()
+    with contextlib.redirect_stdout(io.StringIO()):  # the EM loop prints a lot
+        ll = expectation_maximization(d, maxIter=n_iter, method="L-BFGS-B",
+                                      tau_bounds=tau_bounds, **options)
+    fits[name] = dict(data=d, ll=np.asarray(ll), seconds=time.perf_counter() - t0)
+    print(f"{name}: {fits[name]['seconds'] / n_iter:.1f} s per EM iteration")
+
+# %%
+fig, axes = plt.subplots(1, 3, figsize=(13, 3.4))
+
+ax = axes[0]
+for name, color in [("original", OLD), ("EFGP", NEW)]:
+    ax.plot(np.arange(1, n_iter + 1), fits[name]["ll"], "o-", ms=4, color=color, label=name)
+ax.set_xlabel("EM iteration")
+ax.set_ylabel("expected complete-data LL")
+
+ax = axes[1]
+# Within a latent group the fit is defined up to a rotation of the latents, so learned
+# dimension k need not match true dimension k: compare sorted time constants per group.
+def sorted_tau(prior_par):
+    return np.concatenate([np.sort(p["tau"]) for p in prior_par])
+
+tau_true = sorted_tau(em_data.ground_truth_priorPar)
+lim = [0, 1.1 * max(tau_true.max(), *(sorted_tau(f["data"].priorPar).max() for f in fits.values()))]
+ax.plot(lim, lim, color=TRUTH, lw=1)
+ax.scatter(tau_true, sorted_tau(em_data.priorPar), s=20, color="#b4b2a9", label="initial", zorder=2)
+for name, color, marker in [("original", OLD, "o"), ("EFGP", NEW, "s")]:
+    ax.scatter(tau_true, sorted_tau(fits[name]["data"].priorPar), s=24, color=color, marker=marker,
+               label=name, zorder=3)
+ax.set_xlim(lim)
+ax.set_ylim(lim)
+ax.set_aspect("equal")
+ax.set_xlabel("true τ, sorted per group (s)")
+ax.set_ylabel("learned τ, sorted per group (s)")
+
+
+def log_rates(d, tr):
+    """Log firing rates of all units from the posterior mean and the learned parameters."""
+    post = d.posterior_inf[tr]
+    return np.hstack([post.mean[0].T @ par["W0"].T + post.mean[k + 1].T @ par["W1"].T + par["d"]
+                      for k, par in enumerate(d.xPar)])
+
+
+ax = axes[2]
+true_log_rate = np.concatenate([np.log(em_data.preproc.data[tr]["R"]).ravel() for tr in em_data.trialDur])
+lim = [true_log_rate.min(), true_log_rate.max()]
+ax.plot(lim, lim, color=TRUTH, lw=1)
+for name, color in [("original", OLD), ("EFGP", NEW)]:
+    d = fits[name]["data"]
+    est = np.concatenate([log_rates(d, tr).ravel() for tr in d.trialDur])
+    r = np.corrcoef(est, true_log_rate)[0, 1]
+    ax.scatter(true_log_rate, est, s=3, color=color, alpha=0.3, lw=0, label=f"{name} (r = {r:.3f})")
+ax.set_xlabel("true log rate")
+ax.set_ylabel("fitted log rate")
+ax.set_aspect("equal")
+
+fig.tight_layout()
+handles = {}
+for a in axes:
+    for hnd, lab in zip(*a.get_legend_handles_labels()):
+        handles.setdefault(lab, hnd)
+fig.legend(handles.values(), handles.keys(), frameon=False, ncol=len(handles),
+           loc="lower center", bbox_to_anchor=(0.5, 1.0), markerscale=2)
 
 # %% [markdown]
 # ## Missing task variables

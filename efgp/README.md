@@ -30,6 +30,17 @@ Poisson-Gaussian probabilistic CCA with GP priors; only the inference changes.
    `posterior_covariance_operator` gives matrix-free products with the full
    covariance.
 
+## Install
+
+In the project environment (not in the environment that runs Jupyter):
+
+```
+pip install -e path/to/nemos      # development branch; or git+https://github.com/flatironinstitute/nemos.git@development
+pip install -e ".[docs,test]"     # docs: matplotlib for the notebooks; test: pytest. Both add numba, scikit-learn, scipy for core/
+```
+
+Leave out `[docs,test]` for the inference code alone.
+
 ## Usage
 
 ```python
@@ -85,7 +96,49 @@ solver = efgp.newton_cg_solver(
 A preconditioner is any function `(model, coefficients, trial, hessian_blocks)` that
 returns a positive semidefinite lineax operator close to the inverse Newton matrix.
 
-## With the existing `P_GPCCA` code
+## Fitting the parameters (EM) with the existing `P_GPCCA` code
+
+The M-steps in `core/` read the latents only from `data.posterior_inf`. The EFGP
+E-step fills it in the same format, so EM is the original loop with the E-step
+swapped:
+
+```python
+from expectation_maximization import expectation_maximization   # core/
+from efgp.legacy import EFGPEStep, GPTimescaleMStep
+
+tau_bounds = (0.05, 2.0)   # seconds: the range the GP time constants may take
+expectation_maximization(
+    data, maxIter=20, method="L-BFGS-B",
+    tau_bounds=tau_bounds,
+    e_step=EFGPEStep(tau_bounds),             # EFGP Laplace inference
+    gp_m_step=GPTimescaleMStep(tau_bounds),   # JAX M-step for the time constants
+)
+```
+
+- **Why bounds.** The number of Fourier frequencies depends on the time constant
+  (about `trial duration / tau`). The prior is sized once for the shortest allowed
+  time constant, so the solver compiles once for the whole fit. Longer time
+  constants are padded with zero-weight modes, which leaves their prior unchanged.
+  The lower bound sets the cost: do not make it smaller than needed.
+- **Same bounds everywhere.** A time constant outside `tau_bounds` makes the E-step
+  raise a `ValueError`.
+- **GP M-step.** `GPTimescaleMStep` (`efgp/mstep.py`) maximises the same objective as
+  the L-BFGS-B M-step of `core/learnGPParams.py`, and the tests check that it finds
+  the same time constants. Each latent's time constant is a separate
+  one-dimensional problem, trials with the same time grid are summed first, and
+  the bounds are enforced by a change of variables solved with nemos' `Newton`.
+  It is 15-50x faster than the L-BFGS-B M-step (10-40 trials of 50-200 bins).
+  Without `gp_m_step`, the EM loop uses the original M-step.
+- **Poisson M-step start.** It now starts from the current parameters
+  (`warm_start_poisson=True`); pass `False` for the earlier start from zeros. The
+  problem is convex, so the optimum is the same.
+- **Poisson M-step.** Use `method="L-BFGS-B"`. The default `"sparse-Newton"` needs
+  the `csr` package.
+- **Missing task variables.** The M-steps in `core/` delete time points with NaN
+  task variables, while EFGP keeps them, so `EFGPEStep` refuses data with NaN task
+  variables. Supporting them needs a mask-aware M-step.
+
+To run only the E-step:
 
 ```python
 from efgp.legacy import model_from_pgpcca, trial_from_pgpcca, store_posterior
@@ -96,10 +149,6 @@ for tr in data.trialDur:
     post = efgp.infer_trial(model, trial_from_pgpcca(data, tr), solver=solver)
     store_posterior(data, tr, model, post)  # same format as multiTrialInference
 ```
-
-The existing M-step then runs unchanged. Rebuild the model after each M-step. The
-solver can be reused unless the lengthscales changed, because the number of
-frequencies depends on them.
 
 ## Differences with `core/inference.py`
 
@@ -125,8 +174,9 @@ frequencies depends on them.
   NUFFT overhead dominate. The NUFFT path pays off for long trials and many
   frequencies.
 - **Changing lengthscales.** The number of frequencies is a Python integer that
-  depends on the lengthscales. Changing them means a new prior and a new
-  compilation.
+  depends on the lengthscales. Pass `lengthscale_bounds` to
+  `EFGPPrior.from_lengthscales` to fix it for a whole range of lengthscales;
+  otherwise each new value can change it and trigger a recompilation.
 - **Library internals.** `solver.py` imports private nemos modules
   (`nemos.solvers._second_order`), tested against the nemos `development` branch.
   `_compat.py` patches a jax-finufft 1.3.1 incompatibility with JAX >= 0.10 in
