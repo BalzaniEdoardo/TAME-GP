@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tame-gp-efgp"
+version = "0.1.0"
+description = "EFGP Laplace inference for the Poisson-Gaussian GP-CCA latent model (TAME-GP)"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "jax>=0.10",
+    "jaxtyping",
+    "equinox",
+    "lineax",
+    "optax",
+    "jax-finufft>=1.3.1",
+    # FourierGP and the second-order solvers are on the nemos development branch.
+    "nemos @ git+https://github.com/flatironinstitute/nemos.git@development",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "numba", "scikit-learn", "scipy"]
+
+[tool.setuptools]
+packages = ["efgp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/efgp"]
