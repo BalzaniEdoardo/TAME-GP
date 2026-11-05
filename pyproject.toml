@@ -15,12 +15,20 @@ dependencies = [
     "lineax",
     "optax",
     "jax-finufft>=1.3.1",
-    # FourierGP and the second-order solvers are on the nemos development branch.
-    "nemos @ git+https://github.com/flatironinstitute/nemos.git@development",
+    # FourierGP and the second-order solvers are only on the nemos development
+    # branch (0.2.10.devN builds; the last release, 0.2.9, does not have them).
+    # Install nemos first from a checkout (pip install -e path/to/nemos) or from
+    # git+https://github.com/flatironinstitute/nemos.git@development.
+    "nemos>=0.2.10.dev0",
 ]
 
 [project.optional-dependencies]
-test = ["pytest", "numba", "scikit-learn", "scipy"]
+# What the original numpy code in core/ needs: used by the legacy test and the
+# comparison notebook.
+legacy = ["numba", "scikit-learn", "scipy"]
+test = ["pytest", "tame-gp-efgp[legacy]"]
+# Running the notebooks in examples/ (jupytext itself belongs in the Jupyter env).
+docs = ["matplotlib", "tame-gp-efgp[legacy]"]
 
 [tool.setuptools]
 packages = ["efgp"]
